@@ -11,9 +11,6 @@ DESCRIPTION = 'CRISPR Analysis Module'
 
 
 # Bam files processing to create input for MAGeCK
-## Remove multi-mapped reads: sed '/XS:/d'
-## Keep guide name only: cut -f3
-## Sort guides: sort
-## Count guides and report: uniq -c
+# Run sam_parser_to_guide_counts.sh
 
 

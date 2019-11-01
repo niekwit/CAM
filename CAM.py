@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import os
+import sys
 
 current_path = os.path.realpath(__file__)
 cam_directory = os.path.dirname(current_path)
@@ -9,20 +10,26 @@ current_path = os.path.dirname(current_path) + '/PRAGUI'
 sys.path.append(current_path)
 import PRAGUI as pragui
 
+current_path = current_path + '/cell_bio_util'
+sys.path.append(current_path)
+
+import cell_bio_util as util
+
+
 PROG_NAME = 'CAM'
 DESCRIPTION = 'CRISPR Analysis Module'
 
 # Function to run bowtie
-def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',genome_fasta=None,bt2_index=None,num_cpu=pragui.util.MAX_CORES, is_single_end=True,mapq=20,pair_tags=['r_1','r_2'],bt2_args=None):
-  if aligner == "bowtie":
+def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,bt2_index=None,num_cpu=util.MAX_CORES, is_single_end=True,pair_tags=['r_1','r_2'],bt2_args=None):
+  if aligner == "bowtie2":
     if bt2_index is None:
-      bt2_index = os.path.dirname(genome_fasta) + '/bt2-genome/'
-      bt2_base = os.path.basename(genome_fasta).split(,'.')[:-1]
+      bt2_index = os.path.dirname(reference_fasta) + '/bt2-genome/'
+      bt2_base = os.path.basename(reference_fasta).split('.')[:-1]
       bt2_base = '.'.join(bt2_base)
-      pragui.util.info('Bowtie2 indices not found. Generating indices...')
+      util.info('Bowtie2 indices not found. Generating indices...')
       os.mkdir(bt2_index)
-      cmdArgs = ['bowtie2-build',genome_fasta,bt2_base]
-      pragui.util.call(cmdArgs)
+      cmdArgs = ['bowtie2-build',reference_fasta,bt2_base]
+      util.call(cmdArgs)
     
     util.info('Aligning reads using bowtie2...')
     if bt2_args is None:
@@ -30,19 +37,131 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',genome_fasta=None,bt2_in
     cmdArgs = [aligner] + bt2_args
     
     if is_single_end is True:
-      cmdArgs = cmdArgs + ['-U'] + trimmed_fq +
-                [""]
+      sam_file_list = []
+      fo = os.path.basename(f)
+      fo = fastq_dirs[k]+ '/' + fo
+      sam = fo + 'bt2.sam'
+      log = fo + 'bt2.log'
       
+      for f in trimmed_fq:
+        cmdArgs = cmdArgs + ['-p',str(num_cpu),'-U', f, '-S', sam]
+        sam_files.append(sam)
+        util.call(cmdArgs,stderr=log)
       
+      return(sam_file_list)
 
-# Fastq file trimming using trimgalore
-# Defaults: --length 12 -a GTTTAAGAGCTAAGCTGGAAACAGCATAGCAA
+# Function to run sam_parser_to_guide_counts.sh and to convert sam files to bam
+def sam_parser_parallel(sam_file_list, num_cpu=util.MAX_CORES,convert_to_bam=True,remove_sam=False):
+  
+  def sam_parser(sam_file, convert_to_bam=True):
+    counts_file = sam_file.strip('.sam') + '_lib_guidecounts.txt'
+    counts_log = sam_file.strip('.sam') + '_lib_guidecounts.log'
+    cmdArgs = ['./sam_parser_to_guide_counts.sh',sam_file,counts_file]
+    util.call(cmdArgs,stderr=counts_log)
+    # Convert sam to bam
+    if convert_to_bam is True:
+      bam_file = sam_file.strip('.sam') + '.bam'
+      cmdArgs['samtools','view','-bh',sam_file,'-o',bam_file]
+      remove_sam = True
+    if remove_sam is True:
+      os.remove(sam_file)
+    return(counts_file)
+    
+  common_args=[]
+  counts_file_list = util.parallel_split_job(sam_parser,sam_file_list,common_args,num_cpu)
+  return(counts_file_list)
+  
+# Wrapper function
+def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, fastqc_args=None, is_single_end=True, pair_tags=['r_1','r_2'], aligner='bowtie2', bt2_index=None, bt2_args=None, convert_to_bam=True, remove_sam=False, multiqc=True, num_cpu=util.MAX_CORES):
+  
+  if isinstance(pair_tags, str):
+    pair_tags = pair_tags.split(',')
+  
+  header, csv = pragui.parse_csv(samples_csv)
+  
+  # Fastq file trimming using trimgalore
+  # Defaults: --length 12 -a GTTTAAGAGCTAAGCTGGAAACAGCATAGCAA
+  if trim_galore is None:
+    trim_galore='--length 12 -a GTTTAAGAGCTAAGCTGGAAACAGCATAGCAA'
+  trimmed_fq, fastq_dirs = trim_bam(samples_csv=samples_csv, csv=csv, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, 
+                                    is_single_end=is_single_end, pair_tags=pair_tags)
 
-# Alignment using bowtie2
-# Defaults: --no-sq -5 1 -N 1
+  # Alignment using bowtie2
+  # Defaults: --no-sq -5 1 -N 1
+  sam_file_list = run_aligner(trimmed_fq=trimmed_fq,fastq_dirs=fastq_dirs,aligner=aligner,reference_fasta=reference_fasta,bt2_index=bt2_index,num_cpu=num_cpu, is_single_end=is_single_end,pair_tags=pair_tags,bt2_args=bt2_args)
 
 
-# Bam files processing to create input for MAGeCK
-# Run sam_parser_to_guide_counts.sh
+  # Bam files processing to create input for MAGeCK
+  # Run sam_parser_to_guide_counts.sh
+  counts_file_list = sam_parser_parallel(sam_file_list=sam_file_list, num_cpu=num_cpu, convert_to_bam=convert_to_bam, remove_sam=remove_sam)
+  
+  # Run Multiqc for quality control 
+  pragui.run_multiqc(multiqc=multiqc)
 
+
+
+if __name__ == '__main__':
+
+  from argparse import ArgumentParser
+
+  epilog = 'For further help on running this program please email paulafp@mrc-lmb.cam.ac.uk.\n\n'
+  epilog += 'Example use: python3 CAM.py samples.csv reference.fa \n\n'
+
+  arg_parse = ArgumentParser(prog=PROG_NAME, description=DESCRIPTION,
+                             epilog=epilog, prefix_chars='-', add_help=True)
+
+  arg_parse.add_argument('samples_csv', metavar='SAMPLES_CSV',
+                         help='File path of a tab-separated file containing the samples names, the file path for read1, the file path for read2, the experimental condition (e.g. Mutant or Wild-type) and any other information to be used as contrasts for differential expression calling. For single-ended experiments, please fill read2 slot with NA.')
+
+  arg_parse.add_argument('reference_fasta', metavar='REFERENCE_FASTA',
+                         help='File path of guide RNAs\' reference sequence FASTA file (for use by genome aligner)')
+                         
+  arg_parse.add_argument('-trim_galore', # metavar='TRIM_GALORE_OPTIONS',
+                         default=None,
+                         help='options to be provided to fastqc. They should be provided under double quotes. If not provided, fastqc will run with developer\'s default options.')
+
+  arg_parse.add_argument('-fastqc_args', metavar='FASTQC',
+                         default=None,
+                         help='options to be provided to fastqc. They should be provided under double quotes. If not provided, fastqc will run with developer\'s default options.')
+
+  arg_parse.add_argument('-skipfastqc', default=False, action='store_true',
+                         help='Option to skip fastqc step. If this option is set, the option -fastqc_args will be ignored.')
+
+  arg_parse.add_argument('-al', metavar='ALIGNER_NAME', default='bowtie2',
+                         help='Name of the program to perform the genome alignment/mapping: Default: bowtie2')
+                      
+  arg_parse.add_argument('-bowtie2_index', metavar='BOWTIE_REFERENCE_SEQUENCE_INDEX', default=None,
+                         help='Path to directory where bowtie2 indices are stored.')
+
+  arg_parse.add_argument('-bowtie2_args', default=None,
+                         help='Options to be provided to bowtie2. They should be provided under double quotes. If not provided, bowtie2 will be using the following options: --no-sq -5 1 -N 1')
+
+  arg_parse.add_argument('-cpu', metavar='NUM_CORES', default=util.MAX_CORES, type=int,
+                         help='Number of parallel CPU cores to use. Default: All available (%d)' % util.MAX_CORES)
+
+  arg_parse.add_argument('-pe', nargs=2, metavar='PAIRED_READ_TAGS', default=['r_1','r_2'],
+                        help='The subtrings/tags which are the only differences between paired FASTQ file paths. Default: r_1 r_2')
+
+  arg_parse.add_argument('-se', default=False, action='store_true',
+                         help='Input reads are single-end data, otherwise defaults to paired-end.')
+  
+  arg_parse.add_argument('-disable_multiqc', default=False, action='store_true',
+                         help='Specify whether to disable multiqc run. Defaults to False.')
+
+  args = vars(arg_parse.parse_args())
+
+  samples_csv   = args['samples_csv']
+  reference_fasta  = args['reference_fasta']
+  trim_galore   = args['trim_galore']
+  skipfastqc    = args['skipfastqc']
+  fastqc_args   = args['fastqc_args']
+  aligner       = args['al']
+  bowtie2_index    = args['bt2_index']
+  bowtie2_args     = args['bt2_args']
+  num_cpu       = args['cpu'] or None # May not be zero
+  pair_tags     = args['pe']
+  is_single_end = args['se']
+  multiqc       = not args['disable_multiqc']
+  
+  CAM(samples_csv=samples_csv, reference_fasta=reference_fasta, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, is_single_end=is_single_end, pair_tags=pair_tags, aligner=aligner, bt2_index=bt2_index, bt2_args=bt2_args, convert_to_bam=convert_to_bam, remove_sam=remove_sam, multiqc=multiqc, num_cpu=num_cpu)
 

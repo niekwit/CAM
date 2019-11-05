@@ -20,7 +20,7 @@ PROG_NAME = 'CAM'
 DESCRIPTION = 'CRISPR Analysis Module'
 
 # Function to run bowtie
-def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,bt2_index=None,num_cpu=util.MAX_CORES, is_single_end=True,pair_tags=['r_1','r_2'],bt2_args=None):
+def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,bt2_index=None,num_cpu=util.MAX_CORES, is_single_end=True,pair_tags=['r_1','r_2'],bt2_args=None,convert_to_bam=True,remove_sam=False):
   if aligner == "bowtie2":
     if bt2_index is None:
       bt2_index = os.path.dirname(reference_fasta) + '/bt2-genome/'
@@ -39,48 +39,60 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,bt2
     
     util.info('Aligning reads using bowtie2...')
     if bt2_args is None:
-      bt2_args = ['--no-sq','-5','1','-N','1'] # defaults set by Niek
+      bt2_args = ['-5','1','-N','1'] # defaults set by Niek
     cmdArgs = [aligner] + bt2_args
     
     k = 0
     
     if is_single_end is True:
-      sam_file_list = []
+      file_list = []
       for f in trimmed_fq:
         fo = os.path.basename(f)
         fo = fastq_dirs[k]+ '/' + fo
         sam = fo + '.bt2.sam'
         log = fo + '.bt2.log'
-        sam_file_list.append(sam)
+        file = sam
         if pragui.exists_skip(sam):
           cmdArgs = cmdArgs + ['-p',str(num_cpu),'-x', bt2_index,'-U', f, '-S', sam]
           util.call(cmdArgs,stderr=log)
+        # Convert sam to bam
+        if convert_to_bam is True:
+          bam_file = sam.strip('.sam') + '.bam'
+          cmdArgs = ['samtools','view','-bh',sam,'-o',bam_file]
+          util.call(cmdArgs)
+          remove_sam = True
+          file = bam_file
+        if remove_sam is True:
+          os.remove(sam)
+        file_list.append(file)
+
       
-      return(sam_file_list)
+      return(file_list)
 
 # Function to run sam_parser_to_guide_counts.sh and to convert sam files to bam
-def sam_parser_parallel(sam_file_list, num_cpu=util.MAX_CORES,convert_to_bam=True,remove_sam=False):
+def sam_parser_parallel(file_list, num_cpu=util.MAX_CORES):
   
   util.info('Parsing sam files to get guide counts...')
   
-  def sam_parser(sam_file, convert_to_bam=True):
-    counts_file = sam_file.strip('.sam') + '_lib_guidecounts.txt'
-    counts_log = sam_file.strip('.sam') + '_lib_guidecounts.log'
+  def sam_parser(sam_file):
+    ext = '.sam'
+    if '.bam' in sam_file:
+      ext = '.bam'
+    counts_file = sam_file.strip(ext) + '_lib_guidecounts.txt'
+    counts_log = sam_file.strip(ext) + '_lib_guidecounts.log'
+    temp = sam_file.strip(ext) + '_temp.sam'
+    # Remove header, non-aligned reads and multi-mapped reads from sam/bam file:
+    cmdArgs = ["samtools","view","-q","2","-F","4",sam_file,'-o',temp] # remove multimapped reads (-q 2) and keep only mapped reads (-F 4)
+    util.call(cmdArgs)
     sam_parser_to_guide_counts = os.path.dirname(os.path.realpath(__file__)) + '/sam_parser_to_guide_counts.sh'
     util.info(sam_parser_to_guide_counts)
-    cmdArgs = [sam_parser_to_guide_counts,sam_file,counts_file]
+    cmdArgs = [sam_parser_to_guide_counts,temp,counts_file]
     util.call(cmdArgs,stderr=counts_log)
-    # Convert sam to bam
-    if convert_to_bam is True:
-      bam_file = sam_file.strip('.sam') + '.bam'
-      cmdArgs = ['samtools','view','-bh',sam_file,'-o',bam_file]
-      remove_sam = True
-    if remove_sam is True:
-      os.remove(sam_file)
+    os.remove(temp)
     return(counts_file)
     
   common_args=[]
-  counts_file_list = util.parallel_split_job(sam_parser,sam_file_list,common_args,num_cpu)
+  counts_file_list = util.parallel_split_job(sam_parser,file_list,common_args,num_cpu)
   return(counts_file_list)
   
 # Wrapper function
@@ -110,12 +122,12 @@ def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, f
 
   # Alignment using bowtie2
   # Defaults: --no-sq -5 1 -N 1
-  sam_file_list = run_aligner(trimmed_fq=trimmed_fq,fastq_dirs=fastq_dirs,aligner=aligner,reference_fasta=reference_fasta,bt2_index=bt2_index,num_cpu=num_cpu, is_single_end=is_single_end,pair_tags=pair_tags,bt2_args=bt2_args)
+  file_list = run_aligner(trimmed_fq=trimmed_fq,fastq_dirs=fastq_dirs,aligner=aligner,reference_fasta=reference_fasta,bt2_index=bt2_index,num_cpu=num_cpu, is_single_end=is_single_end,pair_tags=pair_tags,bt2_args=bt2_args,convert_to_bam=convert_to_bam,remove_sam=remove_sam)
 
 
   # Bam files processing to create input for MAGeCK
   # Run sam_parser_to_guide_counts.sh
-  counts_file_list = sam_parser_parallel(sam_file_list=sam_file_list, num_cpu=num_cpu, convert_to_bam=convert_to_bam, remove_sam=remove_sam)
+  counts_file_list = sam_parser_parallel(file_list=file_list, num_cpu=num_cpu)
   
   # Run Multiqc for quality control 
   pragui.run_multiqc(multiqc=multiqc)
@@ -156,7 +168,7 @@ if __name__ == '__main__':
                          help='Path to directory where bowtie2 indices are stored.')
 
   arg_parse.add_argument('-bowtie2_args', default=None,
-                         help='Options to be provided to bowtie2. They should be provided under double quotes. If not provided, bowtie2 will be using the following options: --no-sq -5 1 -N 1')
+                         help='Options to be provided to bowtie2. They should be provided under double quotes. If not provided, bowtie2 will be using the following options: -5 1 -N 1')
   
   arg_parse.add_argument('-sam_output', default='convert_to_bam',
                          help='Specify what to do with the sam file. Options are: sam (keep sam file),convert_to_bam (convert sam file to bam format), delete (delete sam file - best option to save disk space). Default is set to convert_to_bam')

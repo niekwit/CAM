@@ -8,7 +8,7 @@ cam_directory = os.path.dirname(current_path)
 current_path = os.path.dirname(current_path) + '/PRAGUI'
 
 sys.path.append(current_path)
-import PRAGUI as pragui
+import rnaseq_pip_util as pragui
 
 current_path = current_path + '/cell_bio_util'
 sys.path.append(current_path)
@@ -24,44 +24,56 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,bt2
   if aligner == "bowtie2":
     if bt2_index is None:
       bt2_index = os.path.dirname(reference_fasta) + '/bt2-genome/'
+      util.warn('Folder where bowtie2 indices are located hasn\'t been specified. Program will default to %s...' % bt2_index)
       bt2_base = os.path.basename(reference_fasta).split('.')[:-1]
       bt2_base = '.'.join(bt2_base)
-      util.info('Bowtie2 indices not found. Generating indices...')
-      os.mkdir(bt2_index)
-      cmdArgs = ['bowtie2-build',reference_fasta,bt2_base]
-      util.call(cmdArgs)
+      bt2_base = bt2_index + bt2_base
+
+      if not os.path.exists(bt2_index):
+        os.mkdir(bt2_index)
+        util.info('Bowtie2 indices not found. Generating indices...')
+        cmdArgs = ['bowtie2-build',reference_fasta,bt2_base]
+        util.call(cmdArgs)
+      
+      bt2_index = bt2_base
     
     util.info('Aligning reads using bowtie2...')
     if bt2_args is None:
       bt2_args = ['--no-sq','-5','1','-N','1'] # defaults set by Niek
     cmdArgs = [aligner] + bt2_args
     
+    k = 0
+    
     if is_single_end is True:
       sam_file_list = []
-      fo = os.path.basename(f)
-      fo = fastq_dirs[k]+ '/' + fo
-      sam = fo + 'bt2.sam'
-      log = fo + 'bt2.log'
-      
       for f in trimmed_fq:
-        cmdArgs = cmdArgs + ['-p',str(num_cpu),'-U', f, '-S', sam]
-        sam_files.append(sam)
-        util.call(cmdArgs,stderr=log)
+        fo = os.path.basename(f)
+        fo = fastq_dirs[k]+ '/' + fo
+        sam = fo + '.bt2.sam'
+        log = fo + '.bt2.log'
+        sam_file_list.append(sam)
+        if pragui.exists_skip(sam):
+          cmdArgs = cmdArgs + ['-p',str(num_cpu),'-x', bt2_index,'-U', f, '-S', sam]
+          util.call(cmdArgs,stderr=log)
       
       return(sam_file_list)
 
 # Function to run sam_parser_to_guide_counts.sh and to convert sam files to bam
 def sam_parser_parallel(sam_file_list, num_cpu=util.MAX_CORES,convert_to_bam=True,remove_sam=False):
   
+  util.info('Parsing sam files to get guide counts...')
+  
   def sam_parser(sam_file, convert_to_bam=True):
     counts_file = sam_file.strip('.sam') + '_lib_guidecounts.txt'
     counts_log = sam_file.strip('.sam') + '_lib_guidecounts.log'
-    cmdArgs = ['./sam_parser_to_guide_counts.sh',sam_file,counts_file]
+    sam_parser_to_guide_counts = os.path.dirname(os.path.realpath(__file__)) + '/sam_parser_to_guide_counts.sh'
+    util.info(sam_parser_to_guide_counts)
+    cmdArgs = [sam_parser_to_guide_counts,sam_file,counts_file]
     util.call(cmdArgs,stderr=counts_log)
     # Convert sam to bam
     if convert_to_bam is True:
       bam_file = sam_file.strip('.sam') + '.bam'
-      cmdArgs['samtools','view','-bh',sam_file,'-o',bam_file]
+      cmdArgs = ['samtools','view','-bh',sam_file,'-o',bam_file]
       remove_sam = True
     if remove_sam is True:
       os.remove(sam_file)
@@ -72,7 +84,17 @@ def sam_parser_parallel(sam_file_list, num_cpu=util.MAX_CORES,convert_to_bam=Tru
   return(counts_file_list)
   
 # Wrapper function
-def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, fastqc_args=None, is_single_end=True, pair_tags=['r_1','r_2'], aligner='bowtie2', bt2_index=None, bt2_args=None, convert_to_bam=True, remove_sam=False, multiqc=True, num_cpu=util.MAX_CORES):
+def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, fastqc_args=None, is_single_end=True, pair_tags=['r_1','r_2'], aligner='bowtie2', bt2_index=None, bt2_args=None, sam_output='convert_to_bam', multiqc=True, num_cpu=util.MAX_CORES):
+  
+  convert_to_bam = False
+  remove_sam = True
+  
+  if sam_output not in ['sam','convert_to_bam','delete']:
+    util.critical('sam_output flag has been misassigned. Please assign one of the following option: sam, convert_to_bam or delete. For help please type python3 CAM.py --help')
+  elif sam_output == 'convert_to_bam':
+    convert_to_bam = True
+  elif sam_output == 'sam':
+    remove_sam = False
   
   if isinstance(pair_tags, str):
     pair_tags = pair_tags.split(',')
@@ -83,7 +105,7 @@ def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, f
   # Defaults: --length 12 -a GTTTAAGAGCTAAGCTGGAAACAGCATAGCAA
   if trim_galore is None:
     trim_galore='--length 12 -a GTTTAAGAGCTAAGCTGGAAACAGCATAGCAA'
-  trimmed_fq, fastq_dirs = trim_bam(samples_csv=samples_csv, csv=csv, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, 
+  trimmed_fq, fastq_dirs = pragui.trim_bam(samples_csv=samples_csv, csv=csv, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, 
                                     is_single_end=is_single_end, pair_tags=pair_tags)
 
   # Alignment using bowtie2
@@ -135,6 +157,9 @@ if __name__ == '__main__':
 
   arg_parse.add_argument('-bowtie2_args', default=None,
                          help='Options to be provided to bowtie2. They should be provided under double quotes. If not provided, bowtie2 will be using the following options: --no-sq -5 1 -N 1')
+  
+  arg_parse.add_argument('-sam_output', default='convert_to_bam',
+                         help='Specify what to do with the sam file. Options are: sam (keep sam file),convert_to_bam (convert sam file to bam format), delete (delete sam file - best option to save disk space). Default is set to convert_to_bam')
 
   arg_parse.add_argument('-cpu', metavar='NUM_CORES', default=util.MAX_CORES, type=int,
                          help='Number of parallel CPU cores to use. Default: All available (%d)' % util.MAX_CORES)
@@ -142,7 +167,7 @@ if __name__ == '__main__':
   arg_parse.add_argument('-pe', nargs=2, metavar='PAIRED_READ_TAGS', default=['r_1','r_2'],
                         help='The subtrings/tags which are the only differences between paired FASTQ file paths. Default: r_1 r_2')
 
-  arg_parse.add_argument('-se', default=False, action='store_true',
+  arg_parse.add_argument('-se', default=True, action='store_true',
                          help='Input reads are single-end data, otherwise defaults to paired-end.')
   
   arg_parse.add_argument('-disable_multiqc', default=False, action='store_true',
@@ -156,12 +181,13 @@ if __name__ == '__main__':
   skipfastqc    = args['skipfastqc']
   fastqc_args   = args['fastqc_args']
   aligner       = args['al']
-  bowtie2_index    = args['bt2_index']
-  bowtie2_args     = args['bt2_args']
+  bt2_index     = args['bowtie2_index']
+  bt2_args      = args['bowtie2_args']
+  sam_output    = args['sam_output']
   num_cpu       = args['cpu'] or None # May not be zero
   pair_tags     = args['pe']
   is_single_end = args['se']
   multiqc       = not args['disable_multiqc']
   
-  CAM(samples_csv=samples_csv, reference_fasta=reference_fasta, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, is_single_end=is_single_end, pair_tags=pair_tags, aligner=aligner, bt2_index=bt2_index, bt2_args=bt2_args, convert_to_bam=convert_to_bam, remove_sam=remove_sam, multiqc=multiqc, num_cpu=num_cpu)
+  CAM(samples_csv=samples_csv, reference_fasta=reference_fasta, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, is_single_end=is_single_end, pair_tags=pair_tags, aligner=aligner, bt2_index=bt2_index, bt2_args=bt2_args, sam_output=sam_output, multiqc=multiqc, num_cpu=num_cpu)
 

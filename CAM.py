@@ -20,7 +20,7 @@ PROG_NAME = 'CAM'
 DESCRIPTION = 'CRISPR Analysis Module'
 
 # Function to run bowtie
-def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,bt2_index=None,num_cpu=util.MAX_CORES, is_single_end=True,pair_tags=['r_1','r_2'],bt2_args=None,convert_to_bam=True,remove_sam=False):
+def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,bt2_index=None,num_cpu=util.MAX_CORES, is_single_end=True,pair_tags=['r_1','r_2'],bt2_args=None,convert_to_bam=True):
   if aligner == "bowtie2":
     if bt2_index is None:
       bt2_index = os.path.dirname(reference_fasta) + '/bt2-genome/'
@@ -60,9 +60,7 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,bt2
           bam_file = sam.strip('.sam') + '.bam'
           cmdArgs = ['samtools','view','-bh',sam,'-o',bam_file]
           util.call(cmdArgs)
-          remove_sam = True
           file = bam_file
-        if remove_sam is True:
           os.remove(sam)
         file_list.append(file)
 
@@ -70,11 +68,11 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,bt2
       return(file_list)
 
 # Function to run sam_parser_to_guide_counts.sh and to convert sam files to bam
-def sam_parser_parallel(file_list, num_cpu=util.MAX_CORES):
+def sam_parser_parallel(file_list, num_cpu=util.MAX_CORES, remove_sam = True):
   
   util.info('Parsing sam files to get guide counts...')
   
-  def sam_parser(sam_file):
+  def sam_parser(sam_file,remove_sam = True):
     ext = '.sam'
     if '.bam' in sam_file:
       ext = '.bam'
@@ -89,9 +87,11 @@ def sam_parser_parallel(file_list, num_cpu=util.MAX_CORES):
     cmdArgs = [sam_parser_to_guide_counts,temp,counts_file]
     util.call(cmdArgs,stderr=counts_log)
     os.remove(temp)
+    if remove_sam is True and ext is '.sam':
+      os.remove(sam_file)
     return(counts_file)
     
-  common_args=[]
+  common_args=[remove_sam]
   counts_file_list = util.parallel_split_job(sam_parser,file_list,common_args,num_cpu)
   return(counts_file_list)
   
@@ -122,7 +122,7 @@ def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, f
 
   # Alignment using bowtie2
   # Defaults: --no-sq -5 1 -N 1
-  file_list = run_aligner(trimmed_fq=trimmed_fq,fastq_dirs=fastq_dirs,aligner=aligner,reference_fasta=reference_fasta,bt2_index=bt2_index,num_cpu=num_cpu, is_single_end=is_single_end,pair_tags=pair_tags,bt2_args=bt2_args,convert_to_bam=convert_to_bam,remove_sam=remove_sam)
+  file_list = run_aligner(trimmed_fq=trimmed_fq,fastq_dirs=fastq_dirs,aligner=aligner,reference_fasta=reference_fasta,bt2_index=bt2_index,num_cpu=num_cpu, is_single_end=is_single_end,pair_tags=pair_tags,bt2_args=bt2_args,convert_to_bam=convert_to_bam)
 
 
   # Bam files processing to create input for MAGeCK

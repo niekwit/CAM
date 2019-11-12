@@ -9,5 +9,5 @@
 # Sort guides: sort
 # Count guides and report: uniq -c
 
-sed '/XS:/d' $1 | cut -f3 | sort | uniq -c > $2
+cut -f3 $1 | sort | uniq -c > $2
 

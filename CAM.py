@@ -39,14 +39,14 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,bt2
     
     util.info('Aligning reads using bowtie2...')
     if bt2_args is None:
-      bt2_args = ['-5','1','-N','1'] # defaults set by Niek
-    cmdArgs = [aligner] + bt2_args
+      bt2_args = ['-N','1'] # defaults set by Niek
     
     k = 0
     
     if is_single_end is True:
       file_list = []
       for f in trimmed_fq:
+        cmdArgs = [aligner] + bt2_args
         fo = os.path.basename(f)
         fo = fastq_dirs[k]+ '/' + fo
         sam = fo + '.bt2.sam'
@@ -139,7 +139,8 @@ if __name__ == '__main__':
   from argparse import ArgumentParser
 
   epilog = 'For further help on running this program please email paulafp@mrc-lmb.cam.ac.uk.\n\n'
-  epilog += 'Example use: python3 CAM.py samples.csv reference.fa \n\n'
+  epilog += 'Generic example use: python3 CAM.py samples.csv reference.fa \n\n'
+  epilog += 'Example use for bassik library: python3 CAM.py -bowtie2_args "-5 1" samples.csv reference.fa \n\n'
 
   arg_parse = ArgumentParser(prog=PROG_NAME, description=DESCRIPTION,
                              epilog=epilog, prefix_chars='-', add_help=True)
@@ -152,7 +153,7 @@ if __name__ == '__main__':
                          
   arg_parse.add_argument('-trim_galore', # metavar='TRIM_GALORE_OPTIONS',
                          default=None,
-                         help='options to be provided to fastqc. They should be provided under double quotes. If not provided, fastqc will run with developer\'s default options.')
+                         help='options to be provided to trimgalore. They should be provided under double quotes. If not provided, trimgalore will run with developer\'s default options.')
 
   arg_parse.add_argument('-fastqc_args', metavar='FASTQC',
                          default=None,
@@ -168,7 +169,7 @@ if __name__ == '__main__':
                          help='Path to directory where bowtie2 indices are stored.')
 
   arg_parse.add_argument('-bowtie2_args', default=None,
-                         help='Options to be provided to bowtie2. They should be provided under double quotes. If not provided, bowtie2 will be using the following options: -5 1 -N 1')
+                         help='Options to be provided to bowtie2. They should be provided under double quotes. If not provided, bowtie2 will be using the following options: -N 1')
   
   arg_parse.add_argument('-sam_output', default='convert_to_bam',
                          help='Specify what to do with the sam file. Options are: sam (keep sam file),convert_to_bam (convert sam file to bam format), delete (delete sam file - best option to save disk space). Default is set to convert_to_bam')

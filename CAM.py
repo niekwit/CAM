@@ -19,53 +19,84 @@ import cell_bio_util as util
 PROG_NAME = 'CAM'
 DESCRIPTION = 'CRISPR Analysis Module'
 
+
+# Function to convert sam to bam using samtools:
+def convert_sam_to_bam(sam,is_single_end):
+  if is_single_end:
+    bam_file = sam.strip('.sam') + '.bam'
+    cmdArgs = ['samtools','view','-bh',sam,'-o',bam_file]
+    util.call(cmdArgs)
+    #file = bam_file
+    os.remove(sam)
+    return(bam_file)
+
+
 # Function to run bowtie
-def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,bt2_index=None,num_cpu=util.MAX_CORES, is_single_end=True,pair_tags=['r_1','r_2'],bt2_args=None,convert_to_bam=True):
-  if aligner == "bowtie2":
-    if bt2_index is None:
-      bt2_index = os.path.dirname(reference_fasta) + '/bt2-genome/'
-      util.warn('Folder where bowtie2 indices are located hasn\'t been specified. Program will default to %s...' % bt2_index)
-      bt2_base = os.path.basename(reference_fasta).split('.')[:-1]
-      bt2_base = '.'.join(bt2_base)
-      bt2_base = bt2_index + bt2_base
-
-      if not os.path.exists(bt2_index):
-        os.mkdir(bt2_index)
+def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,genome_index=None,num_cpu=util.MAX_CORES, is_single_end=True,pair_tags=['r_1','r_2'],aligner_args=None,convert_to_bam=True):
+  # Generate genome indexes if not provided
+  if aligner == 'bowtie':
+    genome_index = os.path.dirname(reference_fasta) + '/bt-genome/'
+    index_builder = 'bowtie-build'
+  elif aligner == 'bowtie2':
+    genome_index = os.path.dirname(reference_fasta) + '/bt2-genome/'
+    index_builder = 'bowtie2-build'
+  if aligner in [ 'bowtie', 'bowtie2']
+    if genome_index is None:
+      util.warn('Folder where %s indices are located hasn\'t been specified. Program will default to %s...' % (aligner,genome_index))
+      base = os.path.basename(reference_fasta).split('.')[:-1]
+      base = '.'.join(base)
+      base = genome_index + base
+      if not os.path.exists(genome_index):
+        os.mkdir(genome_index)
         util.info('Bowtie2 indices not found. Generating indices...')
-        cmdArgs = ['bowtie2-build',reference_fasta,bt2_base]
+        cmdArgs = [index_builder,reference_fasta,base]
         util.call(cmdArgs)
-      
-      bt2_index = bt2_base
+      genome_index = base
     
-    util.info('Aligning reads using bowtie2...')
-    if bt2_args is None:
-      bt2_args = ['-N','1'] # defaults set by Niek
+    # Alignment
+    util.info('Aligning reads using %s...') % aligner
     
-    k = 0
+    def format_aligner_input(trimmed_fq,aligner,aligner_args,is_single_end):
+      if aligner == 'bowtie':
+        ext = 'bt'
+      elif aligner == 'bowtie2'
+        ext = 'bt2'
+      k = 0 
+      if is_single_end:
+        file_list = []
+        for f in trimmed_fq:
+          cmdArgs = [aligner] + aligner_args
+          fo = os.path.basename(f)
+          fo = fastq_dirs[k]+ '/' + fo
+          sam = fo + '.%s.sam' % ext
+          log = fo + '.%s.log' % ext
+          return([sam,log])
+   
+    if aligner == 'bowtie':
+      if aligner_args is None:
+        aligner_args = ['-v', '0', '-m', '1', '--strata'] # allow no mismatches and report reads that align only once
+      sam , log = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end)
+      file = sam
+      if pragui.exists_skip(sam):
+        cmdArgs = cmdArgs + ['-p',str(num_cpu), genome_index,f, '-S','--sam-nohead', '--no-unal',sam]
+        util.call(cmdArgs,stderr=log)
+          
+    if aligner == 'bowtie2':
+      if aligner_args is None:
+        aligner_args = ['-N','0','--no-1mm-upfront','-L','25', '--no-unal', '--no-hd'] # set seed to read length, allow no mismatches and no pre-alignment before multiseed heuristic
+      sam , log = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end)
+      file = sam
+      if pragui.exists_skip(sam):
+        cmdArgs = cmdArgs + ['-p',str(num_cpu),'-x', genome_index,'-U', f, '-S', sam]
+        util.call(cmdArgs,stderr=log)
+            
+    # Convert sam to bam
+    if convert_to_bam is True:
+      file = convert_sam_to_bam(sam=sam,is_single_end=is_single_end)
     
-    if is_single_end is True:
-      file_list = []
-      for f in trimmed_fq:
-        cmdArgs = [aligner] + bt2_args
-        fo = os.path.basename(f)
-        fo = fastq_dirs[k]+ '/' + fo
-        sam = fo + '.bt2.sam'
-        log = fo + '.bt2.log'
-        file = sam
-        if pragui.exists_skip(sam):
-          cmdArgs = cmdArgs + ['-p',str(num_cpu),'-x', bt2_index,'-U', f, '-S', sam]
-          util.call(cmdArgs,stderr=log)
-        # Convert sam to bam
-        if convert_to_bam is True:
-          bam_file = sam.strip('.sam') + '.bam'
-          cmdArgs = ['samtools','view','-bh',sam,'-o',bam_file]
-          util.call(cmdArgs)
-          file = bam_file
-          os.remove(sam)
-        file_list.append(file)
+    file_list.append(file)
+    return(file_list)
 
-      
-      return(file_list)
 
 # Function to run sam_parser_to_guide_counts.sh and to convert sam files to bam
 def sam_parser_parallel(file_list, num_cpu=util.MAX_CORES, remove_sam = True):
@@ -78,15 +109,16 @@ def sam_parser_parallel(file_list, num_cpu=util.MAX_CORES, remove_sam = True):
       ext = '.bam'
     counts_file = sam_file.strip(ext) + '_lib_guidecounts.txt'
     counts_log = sam_file.strip(ext) + '_lib_guidecounts.log'
-    temp = sam_file.strip(ext) + '_temp.sam'
+    # temp = sam_file.strip(ext) + '_temp.sam'
     # Remove header, non-aligned reads and multi-mapped reads from sam/bam file:
-    cmdArgs = ["samtools","view","-q","2","-F","4",sam_file,'-o',temp] # remove multimapped reads (-q 2) and keep only mapped reads (-F 4)
-    util.call(cmdArgs)
+    # cmdArgs = ["samtools","view","-q","2","-F","4",sam_file,'-o',temp] # Keep only mapped reads (-F 4). (-q 2) should remove multimapped reads but doesn't work for bt2 given that it doesn't provide the correct flag.  
+    #util.call(cmdArgs)
     sam_parser_to_guide_counts = os.path.dirname(os.path.realpath(__file__)) + '/sam_parser_to_guide_counts.sh'
     util.info(sam_parser_to_guide_counts)
-    cmdArgs = [sam_parser_to_guide_counts,temp,counts_file]
+    # cmdArgs = [sam_parser_to_guide_counts,temp,counts_file]
+    cmdArgs = [sam_parser_to_guide_counts,sam,counts_file]
     util.call(cmdArgs,stderr=counts_log)
-    os.remove(temp)
+    # os.remove(temp)
     if remove_sam is True and ext is '.sam':
       os.remove(sam_file)
     return(counts_file)
@@ -94,9 +126,10 @@ def sam_parser_parallel(file_list, num_cpu=util.MAX_CORES, remove_sam = True):
   common_args=[remove_sam]
   counts_file_list = util.parallel_split_job(sam_parser,file_list,common_args,num_cpu)
   return(counts_file_list)
+
   
 # Wrapper function
-def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, fastqc_args=None, is_single_end=True, pair_tags=['r_1','r_2'], aligner='bowtie2', bt2_index=None, bt2_args=None, sam_output='convert_to_bam', multiqc=True, num_cpu=util.MAX_CORES):
+def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, fastqc_args=None, is_single_end=True, pair_tags=['r_1','r_2'], aligner='bowtie2', genome_index=None, aligner_args=None, sam_output='convert_to_bam', multiqc=True, num_cpu=util.MAX_CORES):
   
   convert_to_bam = False
   remove_sam = True
@@ -114,15 +147,15 @@ def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, f
   header, csv = pragui.parse_csv(samples_csv)
   
   # Fastq file trimming using trimgalore
-  # Defaults: --length 12 -a GTTTAAGAGCTAAGCTGGAAACAGCATAGCAA
+  # Defaults: --length 12 -e 0.2 -a GTTTAAGAGCTA ( only first 12 bp of adapter GTTTAAGAGCTAAGCTGGAAACAGCATAGCAA)
   if trim_galore is None:
-    trim_galore='--length 12 -a GTTTAAGAGCTAAGCTGGAAACAGCATAGCAA'
+    trim_galore='--length 12 -e 0.2 -a GTTTAAGAGCTA' # Allow up to two differences in adapter
   trimmed_fq, fastq_dirs = pragui.trim_bam(samples_csv=samples_csv, csv=csv, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, 
                                     is_single_end=is_single_end, pair_tags=pair_tags)
 
   # Alignment using bowtie2
   # Defaults: --no-sq -5 1 -N 1
-  file_list = run_aligner(trimmed_fq=trimmed_fq,fastq_dirs=fastq_dirs,aligner=aligner,reference_fasta=reference_fasta,bt2_index=bt2_index,num_cpu=num_cpu, is_single_end=is_single_end,pair_tags=pair_tags,bt2_args=bt2_args,convert_to_bam=convert_to_bam)
+  file_list = run_aligner(trimmed_fq=trimmed_fq,fastq_dirs=fastq_dirs,aligner=aligner,reference_fasta=reference_fasta,genome_index=genome_index,num_cpu=num_cpu, is_single_end=is_single_end,pair_tags=pair_tags,aligner_args=aligner_args,convert_to_bam=convert_to_bam)
 
 
   # Bam files processing to create input for MAGeCK
@@ -194,13 +227,13 @@ if __name__ == '__main__':
   skipfastqc    = args['skipfastqc']
   fastqc_args   = args['fastqc_args']
   aligner       = args['al']
-  bt2_index     = args['bowtie2_index']
-  bt2_args      = args['bowtie2_args']
+  genome_index     = args['bowtie2_index']
+  aligner_args      = args['bowtie2_args']
   sam_output    = args['sam_output']
   num_cpu       = args['cpu'] or None # May not be zero
   pair_tags     = args['pe']
   is_single_end = args['se']
   multiqc       = not args['disable_multiqc']
   
-  CAM(samples_csv=samples_csv, reference_fasta=reference_fasta, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, is_single_end=is_single_end, pair_tags=pair_tags, aligner=aligner, bt2_index=bt2_index, bt2_args=bt2_args, sam_output=sam_output, multiqc=multiqc, num_cpu=num_cpu)
+  CAM(samples_csv=samples_csv, reference_fasta=reference_fasta, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, is_single_end=is_single_end, pair_tags=pair_tags, aligner=aligner, genome_index=genome_index, aligner_args=aligner_args, sam_output=sam_output, multiqc=multiqc, num_cpu=num_cpu)
 

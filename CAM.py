@@ -173,7 +173,7 @@ if __name__ == '__main__':
 
   epilog = 'For further help on running this program please email paulafp@mrc-lmb.cam.ac.uk.\n\n'
   epilog += 'Generic example use: python3 CAM.py samples.csv reference.fa \n\n'
-  epilog += 'Example use for bassik library: python3 CAM.py -bowtie2_args "-5 1" samples.csv reference.fa \n\n'
+  epilog += 'Example use for bassik library: python3 CAM.py -aligner_args "-5 1" samples.csv reference.fa \n\n'
 
   arg_parse = ArgumentParser(prog=PROG_NAME, description=DESCRIPTION,
                              epilog=epilog, prefix_chars='-', add_help=True)
@@ -198,10 +198,10 @@ if __name__ == '__main__':
   arg_parse.add_argument('-al', metavar='ALIGNER_NAME', default='bowtie2',
                          help='Name of the program to perform the genome alignment/mapping: Default: bowtie2')
                       
-  arg_parse.add_argument('-bowtie2_index', metavar='BOWTIE_REFERENCE_SEQUENCE_INDEX', default=None,
+  arg_parse.add_argument('-aligner_index', metavar='BOWTIE_REFERENCE_SEQUENCE_INDEX', default=None,
                          help='Path to directory where bowtie2 indices are stored.')
 
-  arg_parse.add_argument('-bowtie2_args', default=None,
+  arg_parse.add_argument('-aligner_args', default=None,
                          help='Options to be provided to bowtie2. They should be provided under double quotes. If not provided, bowtie2 will be using the following options: -N 1')
   
   arg_parse.add_argument('-sam_output', default='convert_to_bam',
@@ -227,8 +227,8 @@ if __name__ == '__main__':
   skipfastqc    = args['skipfastqc']
   fastqc_args   = args['fastqc_args']
   aligner       = args['al']
-  genome_index     = args['bowtie2_index']
-  aligner_args      = args['bowtie2_args']
+  genome_index     = args['aligner_index']
+  aligner_args      = args['aligner_args']
   sam_output    = args['sam_output']
   num_cpu       = args['cpu'] or None # May not be zero
   pair_tags     = args['pe']

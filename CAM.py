@@ -149,7 +149,7 @@ def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, f
   # Fastq file trimming using trimgalore
   # Defaults: --length 12 -e 0.2 -a GTTTAAGAGCTA ( only first 12 bp of adapter GTTTAAGAGCTAAGCTGGAAACAGCATAGCAA)
   if trim_galore is None:
-    trim_galore='--length 12 -e 0.2 -a GTTTAAGAGCTA --clip_R1 1 ' # Allow up to two differences in adapter
+    trim_galore='--length 11 -e 0.2 -a GTTTAAGAGCTA --clip_R1 1 ' # Allow up to two differences in adapter
   trimmed_fq, fastq_dirs = pragui.trim_bam(samples_csv=samples_csv, csv=csv, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, 
                                     is_single_end=is_single_end, pair_tags=pair_tags)
 

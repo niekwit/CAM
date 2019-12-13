@@ -9,5 +9,11 @@
 # Sort guides: sort
 # Count guides and report: uniq -c
 
- sed '/XS:/d' $1 | cut -f3 | sort | uniq -c > $2
+if [ $3 eq "bowties" ]
+then
+sed '/XS:/d' $1 | cut -f3 | sort | uniq -c > $2 # Remove multiply mapped reads
+else
+cut -f3 $1 | sort | uniq -c > $2
+fi
+
 

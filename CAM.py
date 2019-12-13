@@ -22,6 +22,7 @@ DESCRIPTION = 'CRISPR Analysis Module'
 
 # Function to convert sam to bam using samtools:
 def convert_sam_to_bam(sam,is_single_end):
+  print('testing')
   if is_single_end:
     bam_file = sam.strip('.sam') + '.bam'
     cmdArgs = ['samtools','view','-bh',sam,'-o',bam_file]
@@ -99,10 +100,10 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
     # Convert sam to bam
     if convert_to_bam is True:
       file_list = []
-      for sam , log in file_list:
+      for f, sam , log in sam_log_list:
         file = convert_sam_to_bam(sam=sam,is_single_end=is_single_end)
         file_list.append(file)
-        
+    
     return(file_list)
 
 
@@ -130,7 +131,7 @@ def sam_parser_parallel(file_list, num_cpu=util.MAX_CORES, remove_sam = True):
     if remove_sam is True and ext is '.sam':
       os.remove(sam_file)
     return(counts_file)
-    
+ 
   common_args=[remove_sam]
   counts_file_list = util.parallel_split_job(sam_parser,file_list,common_args,num_cpu)
   return(counts_file_list)

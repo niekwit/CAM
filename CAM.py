@@ -35,13 +35,14 @@ def convert_sam_to_bam(sam,is_single_end):
 def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,genome_index=None,num_cpu=util.MAX_CORES, is_single_end=True,pair_tags=['r_1','r_2'],aligner_args=None,convert_to_bam=True):
   # Generate genome indexes if not provided
   if aligner == 'bowtie':
-    genome_index = os.path.dirname(reference_fasta) + '/bt-genome/'
+    genome_index_default = os.path.dirname(reference_fasta) + '/bt-genome/'
     index_builder = 'bowtie-build'
   elif aligner == 'bowtie2':
-    genome_index = os.path.dirname(reference_fasta) + '/bt2-genome/'
+    genome_index_default = os.path.dirname(reference_fasta) + '/bt2-genome/'
     index_builder = 'bowtie2-build'
   if aligner in [ 'bowtie', 'bowtie2']:
     if genome_index is None:
+      genome_index = genome_index_default
       util.warn('Folder where %s indices are located hasn\'t been specified. Program will default to %s...' % (aligner,genome_index))
       base = os.path.basename(reference_fasta).split('.')[:-1]
       base = '.'.join(base)
@@ -70,18 +71,18 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
           fo = fastq_dirs[k]+ '/' + fo
           sam = fo + '.%s.sam' % ext
           log = fo + '.%s.log' % ext
-          sam_log_list.append([sam,log])
+          sam_log_list.append([f,sam,log])
         return(sam_log_list)
    
     if aligner == 'bowtie':
       if aligner_args is None:
-        aligner_args = ['-v', '0', '-m', '1', '--strata'] # allow no mismatches and report reads that align only once
+        aligner_args = ['-v', '0', '-m', '1', '--strata', '--best'] # allow no mismatches and report reads that align only once
       sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end)
       file_list = []
-      for sam , log in sam_log_list:
+      for f, sam , log in sam_log_list:
         file_list.append(sam)
         if pragui.exists_skip(sam):
-          cmdArgs = aligner_args + ['-p',str(num_cpu), genome_index,f, '-S','--sam-nohead', '--no-unal',sam]
+          cmdArgs = [aligner] + aligner_args + ['-p',str(num_cpu), genome_index,f, '-S','--sam-nohead', '--no-unal',sam]
           util.call(cmdArgs,stderr=log)
           
     if aligner == 'bowtie2':
@@ -89,11 +90,10 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
         aligner_args = ['-N','0','--no-1mm-upfront','-L','25', '--no-unal', '--no-hd'] # set seed to read length, allow no mismatches and no pre-alignment before multiseed heuristic
       sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end)
       file_list = []
-      for sam , log in sam_log_list:
+      for f, sam , log in sam_log_list:
         file_list.append(sam)
         if pragui.exists_skip(sam):
-          print([aligner,aligner_args])
-          cmdArgs = aligner_args + ['-p',str(num_cpu),'-x', genome_index,'-U', f, '-S', sam]
+          cmdArgs = [aligner] + aligner_args + ['-p',str(num_cpu),'-x', genome_index,'-U', f, '-S', sam]
           util.call(cmdArgs,stderr=log)
             
     # Convert sam to bam

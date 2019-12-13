@@ -40,7 +40,7 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
   elif aligner == 'bowtie2':
     genome_index = os.path.dirname(reference_fasta) + '/bt2-genome/'
     index_builder = 'bowtie2-build'
-  if aligner in [ 'bowtie', 'bowtie2']
+  if aligner in [ 'bowtie', 'bowtie2']:
     if genome_index is None:
       util.warn('Folder where %s indices are located hasn\'t been specified. Program will default to %s...' % (aligner,genome_index))
       base = os.path.basename(reference_fasta).split('.')[:-1]
@@ -54,12 +54,12 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
       genome_index = base
     
     # Alignment
-    util.info('Aligning reads using %s...') % aligner
+    util.info('Aligning reads using %s...' % aligner)
     
     def format_aligner_input(trimmed_fq,aligner,aligner_args,is_single_end):
       if aligner == 'bowtie':
         ext = 'bt'
-      elif aligner == 'bowtie2'
+      elif aligner == 'bowtie2':
         ext = 'bt2'
       k = 0 
       if is_single_end:
@@ -78,7 +78,7 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
       sam , log = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end)
       file = sam
       if pragui.exists_skip(sam):
-        cmdArgs = cmdArgs + ['-p',str(num_cpu), genome_index,f, '-S','--sam-nohead', '--no-unal',sam]
+        cmdArgs = aligner_args + ['-p',str(num_cpu), genome_index,f, '-S','--sam-nohead', '--no-unal',sam]
         util.call(cmdArgs,stderr=log)
           
     if aligner == 'bowtie2':
@@ -87,7 +87,8 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
       sam , log = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end)
       file = sam
       if pragui.exists_skip(sam):
-        cmdArgs = cmdArgs + ['-p',str(num_cpu),'-x', genome_index,'-U', f, '-S', sam]
+        print([aligner,aligner_args])
+        cmdArgs = aligner_args + ['-p',str(num_cpu),'-x', genome_index,'-U', f, '-S', sam]
         util.call(cmdArgs,stderr=log)
             
     # Convert sam to bam
@@ -149,7 +150,7 @@ def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, f
   # Fastq file trimming using trimgalore
   # Defaults: --length 12 -e 0.2 -a GTTTAAGAGCTA ( only first 12 bp of adapter GTTTAAGAGCTAAGCTGGAAACAGCATAGCAA)
   if trim_galore is None:
-    trim_galore='--length 11 -e 0.2 -a GTTTAAGAGCTA --clip_R1 1 ' # Allow up to two differences in adapter
+    trim_galore='--length 11 -e 0.2 -a GTTTAAGAGCTA --clip_R1 1' # Allow up to two differences in adapter
   trimmed_fq, fastq_dirs = pragui.trim_bam(samples_csv=samples_csv, csv=csv, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, 
                                     is_single_end=is_single_end, pair_tags=pair_tags)
 

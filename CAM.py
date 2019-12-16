@@ -21,15 +21,13 @@ DESCRIPTION = 'CRISPR Analysis Module'
 
 
 # Function to convert sam to bam using samtools:
-def convert_sam_to_bam(sam,is_single_end):
-  print('testing')
-  if is_single_end:
-    bam_file = sam.strip('.sam') + '.bam'
-    cmdArgs = ['samtools','view','-bh',sam,'-o',bam_file]
-    util.call(cmdArgs)
-    #file = bam_file
-    os.remove(sam)
-    return(bam_file)
+def convert_sam_to_bam(sam):
+  util.info('Converting %s to bam format so to save disk space...' % sam) 
+  bam_file = sam.strip('.sam') + '.bam'
+  cmdArgs = ['samtools','view','-bh',sam,'-o',bam_file]
+  util.call(cmdArgs)
+  os.remove(sam)
+  return(bam_file)
 
 
 # Function to run bowtie
@@ -58,7 +56,7 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
     # Alignment
     util.info('Aligning reads using %s...' % aligner)
     
-    def format_aligner_input(trimmed_fq,aligner,aligner_args,is_single_end):
+    def format_aligner_input(trimmed_fq,aligner,aligner_args,is_single_end,convert_to_bam):
       if aligner == 'bowtie':
         ext = 'bt'
       elif aligner == 'bowtie2':
@@ -74,22 +72,30 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
           log = fo + '.%s.log' % ext
           sam_log_list.append([f,sam,log])
         return(sam_log_list)
-   
+    
     if aligner == 'bowtie':
+      if convert_to_bam:
+        sam_args = ['-S','--no-unal']
+      else:
+          sam_args = []
       if aligner_args is None:
         aligner_args = ['-v', '0', '-m', '1', '--strata', '--best'] # allow no mismatches and report reads that align only once
-      sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end)
+      sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end,convert_to_bam=convert_to_bam)
       file_list = []
       for f, sam , log in sam_log_list:
         file_list.append(sam)
         if pragui.exists_skip(sam):
-          cmdArgs = [aligner] + aligner_args + ['-p',str(num_cpu), genome_index,f, '-S','--sam-nohead', '--no-unal',sam]
+          cmdArgs = [aligner] + aligner_args + ['-p',str(num_cpu), genome_index,f] + sam_args + [sam]
           util.call(cmdArgs,stderr=log)
           
     if aligner == 'bowtie2':
+      if convert_to_bam:
+          header_opt = []
+      else:
+        header_opt = ['--no-hd']
       if aligner_args is None:
-        aligner_args = ['-N','0','--no-1mm-upfront','-L','25', '--no-unal', '--no-hd'] # set seed to read length, allow no mismatches and no pre-alignment before multiseed heuristic
-      sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end)
+        aligner_args = ['-N','0','--no-1mm-upfront','-L','25', '--no-unal'] + header_opt # set seed to read length, allow no mismatches and no pre-alignment before multiseed heuristic
+      sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end,convert_to_bam=convert_to_bam)
       file_list = []
       for f, sam , log in sam_log_list:
         file_list.append(sam)
@@ -101,14 +107,14 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
     if convert_to_bam is True:
       file_list = []
       for f, sam , log in sam_log_list:
-        file = convert_sam_to_bam(sam=sam,is_single_end=is_single_end)
+        file = convert_sam_to_bam(sam=sam)
         file_list.append(file)
     
     return(file_list)
 
 
 # Function to run sam_parser_to_guide_counts.sh and to convert sam files to bam
-def sam_parser_parallel(file_list, num_cpu=util.MAX_CORES, remove_sam = True):
+def sam_parser_parallel(file_list, convert_to_bam,num_cpu=util.MAX_CORES, remove_sam = True):
   
   util.info('Parsing sam files to get guide counts...')
   
@@ -118,16 +124,21 @@ def sam_parser_parallel(file_list, num_cpu=util.MAX_CORES, remove_sam = True):
       ext = '.bam'
     counts_file = sam_file.strip(ext) + '_lib_guidecounts.txt'
     counts_log = sam_file.strip(ext) + '_lib_guidecounts.log'
-    # temp = sam_file.strip(ext) + '_temp.sam'
-    # Remove header, non-aligned reads and multi-mapped reads from sam/bam file:
-    # cmdArgs = ["samtools","view","-q","2","-F","4",sam_file,'-o',temp] # Keep only mapped reads (-F 4). (-q 2) should remove multimapped reads but doesn't work for bt2 given that it doesn't provide the correct flag.  
-    #util.call(cmdArgs)
     sam_parser_to_guide_counts = os.path.dirname(os.path.realpath(__file__)) + '/sam_parser_to_guide_counts.sh'
-    util.info(sam_parser_to_guide_counts)
-    # cmdArgs = [sam_parser_to_guide_counts,temp,counts_file]
-    cmdArgs = [sam_parser_to_guide_counts,sam,counts_file]
-    util.call(cmdArgs,stderr=counts_log)
-    # os.remove(temp)
+    if convert_to_bam:
+      util.info('Removing sam header from %s in order to proceed to read counting...' % sam_file)
+      # Remove header
+      temp = sam_file.strip(ext) + '_temp.sam'
+      cmdArgs = ['samtools','view','-F','4',sam_file,'-o',temp] # Remove unaligned reads if there are any. This is particularly important when using bowtie because the --no-unal flag doesn't really work.
+      util.call(cmdArgs)
+      util.info('Counting reads from %s...' % sam_file)
+      cmdArgs = [sam_parser_to_guide_counts,temp,counts_file]
+      util.call(cmdArgs,stderr=counts_log)
+      os.remove(temp)
+    else:
+      util.info('Counting reads from %s...' % sam_file)
+      cmdArgs = [sam_parser_to_guide_counts,sam_file,counts_file]
+      util.call(cmdArgs,stderr=counts_log)
     if remove_sam is True and ext is '.sam':
       os.remove(sam_file)
     return(counts_file)
@@ -169,7 +180,7 @@ def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, f
 
   # Bam files processing to create input for MAGeCK
   # Run sam_parser_to_guide_counts.sh
-  counts_file_list = sam_parser_parallel(file_list=file_list, num_cpu=num_cpu)
+  counts_file_list = sam_parser_parallel(file_list=file_list, num_cpu=num_cpu,convert_to_bam=convert_to_bam)
   
   # Run Multiqc for quality control 
   pragui.run_multiqc(multiqc=multiqc)

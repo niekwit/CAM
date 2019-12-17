@@ -9,7 +9,7 @@
 # Sort guides: sort
 # Count guides and report: uniq -c
 
-if [ $3 eq "bowties" ]
+if [ $3 = "bowtie2" ]
 then
 sed '/XS:/d' $1 | cut -f3 | sort | uniq -c > $2 # Remove multiply mapped reads
 else

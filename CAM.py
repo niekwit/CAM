@@ -94,7 +94,7 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
       else:
         header_opt = ['--no-hd']
       if aligner_args is None:
-        aligner_args = ['-N','0','--no-1mm-upfront','-L','25', '--no-unal'] + header_opt # set seed to read length, allow no mismatches and no pre-alignment before multiseed heuristic
+        aligner_args = ['-N','0','--no-1mm-upfront','--score-min', 'L,0,0', '--no-unal'] + header_opt # allow no mismatches and no pre-alignment before multiseed heuristic
       sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end,convert_to_bam=convert_to_bam)
       file_list = []
       for f, sam , log in sam_log_list:
@@ -114,11 +114,11 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
 
 
 # Function to run sam_parser_to_guide_counts.sh and to convert sam files to bam
-def sam_parser_parallel(file_list, convert_to_bam,num_cpu=util.MAX_CORES, remove_sam = True):
+def sam_parser_parallel(file_list, convert_to_bam,aligner,num_cpu=util.MAX_CORES, remove_sam = True):
   
   util.info('Parsing sam files to get guide counts...')
   
-  def sam_parser(sam_file,remove_sam = True):
+  def sam_parser(sam_file,aligner,remove_sam = True):
     ext = '.sam'
     if '.bam' in sam_file:
       ext = '.bam'
@@ -132,18 +132,18 @@ def sam_parser_parallel(file_list, convert_to_bam,num_cpu=util.MAX_CORES, remove
       cmdArgs = ['samtools','view','-F','4',sam_file,'-o',temp] # Remove unaligned reads if there are any. This is particularly important when using bowtie because the --no-unal flag doesn't really work.
       util.call(cmdArgs)
       util.info('Counting reads from %s...' % sam_file)
-      cmdArgs = [sam_parser_to_guide_counts,temp,counts_file]
+      cmdArgs = [sam_parser_to_guide_counts,temp,counts_file,aligner]
       util.call(cmdArgs,stderr=counts_log)
       os.remove(temp)
     else:
       util.info('Counting reads from %s...' % sam_file)
-      cmdArgs = [sam_parser_to_guide_counts,sam_file,counts_file]
+      cmdArgs = [sam_parser_to_guide_counts,sam_file,counts_file,aligner]
       util.call(cmdArgs,stderr=counts_log)
     if remove_sam is True and ext is '.sam':
       os.remove(sam_file)
     return(counts_file)
  
-  common_args=[remove_sam]
+  common_args=[aligner,remove_sam]
   counts_file_list = util.parallel_split_job(sam_parser,file_list,common_args,num_cpu)
   return(counts_file_list)
 
@@ -180,7 +180,7 @@ def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, f
 
   # Bam files processing to create input for MAGeCK
   # Run sam_parser_to_guide_counts.sh
-  counts_file_list = sam_parser_parallel(file_list=file_list, num_cpu=num_cpu,convert_to_bam=convert_to_bam)
+  counts_file_list = sam_parser_parallel(file_list=file_list,aligner=aligner,num_cpu=num_cpu,convert_to_bam=convert_to_bam)
   
   # Run Multiqc for quality control 
   pragui.run_multiqc(multiqc=multiqc)

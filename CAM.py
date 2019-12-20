@@ -84,7 +84,7 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',guide_library='bassik',r
       if aligner_args is None:
         aligner_args = ['-v', '0', '-m', '1', '--strata', '--best'] # allow no mismatches and report reads that align only once
         if guide_library == 'bassik':
-          aligner_args = aligner_args['-5','-1']
+          aligner_args = aligner_args + ['-5','1']
       sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end,convert_to_bam=convert_to_bam)
       file_list = []
       for f, sam , log in sam_log_list:
@@ -108,7 +108,7 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',guide_library='bassik',r
       if aligner_args is None:
         aligner_args = ['-N','0','--no-1mm-upfront','--score-min', 'L,0,0', '--no-unal'] + header_opt # allow no mismatches and no pre-alignment before multiseed heuristic
         if guide_library == 'bassik':
-          aligner_args = aligner_args['-5','-1']
+          aligner_args = aligner_args + ['-5','1']
       sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end,convert_to_bam=convert_to_bam)
       file_list = []
       for f, sam , log in sam_log_list:

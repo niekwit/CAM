@@ -34,7 +34,7 @@ def convert_sam_to_bam(sam):
 
 
 # Function to run bowtie
-def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,genome_index=None,num_cpu=util.MAX_CORES, is_single_end=True,pair_tags=['r_1','r_2'],aligner_args=None,convert_to_bam=True):
+def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',guide_library='bassik',reference_fasta=None,genome_index=None,num_cpu=util.MAX_CORES, is_single_end=True,pair_tags=['r_1','r_2'],aligner_args=None,convert_to_bam=True):
   # Generate genome indexes if not provided
   if aligner == 'bowtie':
     genome_index_default = os.path.dirname(reference_fasta) + '/bt-genome/'
@@ -83,6 +83,8 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
           sam_args = []
       if aligner_args is None:
         aligner_args = ['-v', '0', '-m', '1', '--strata', '--best'] # allow no mismatches and report reads that align only once
+        if guide_library == 'bassik':
+          aligner_args = aligner_args['-5','-1']
       sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end,convert_to_bam=convert_to_bam)
       file_list = []
       for f, sam , log in sam_log_list:
@@ -105,6 +107,8 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
         header_opt = ['--no-hd']
       if aligner_args is None:
         aligner_args = ['-N','0','--no-1mm-upfront','--score-min', 'L,0,0', '--no-unal'] + header_opt # allow no mismatches and no pre-alignment before multiseed heuristic
+        if guide_library == 'bassik':
+          aligner_args = aligner_args['-5','-1']
       sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end,convert_to_bam=convert_to_bam)
       file_list = []
       for f, sam , log in sam_log_list:
@@ -296,7 +300,7 @@ def tsv_format(counts_file_list,guides_csv,software=list('mageck' or 'bagel')[1]
 
 ######################## 
 # Wrapper function
-def CAM(samples_csv, guides_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, fastqc_args=None, is_single_end=True, pair_tags=['r_1','r_2'], aligner='bowtie2', genome_index=None, aligner_args=None, sam_output='convert_to_bam',software=list('mageck' or 'bagel')[1], multiqc=True, num_cpu=util.MAX_CORES):
+def CAM(samples_csv, guides_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, fastqc_args=None, is_single_end=True, pair_tags=['r_1','r_2'], aligner='bowtie2', genome_index=None, aligner_args=None, sam_output='convert_to_bam', guide_library='bassik',software=list('mageck' or 'bagel')[1], multiqc=True, num_cpu=util.MAX_CORES):
   
   convert_to_bam = False
   remove_sam = True
@@ -322,7 +326,7 @@ def CAM(samples_csv, guides_csv, reference_fasta=None, trim_galore=None, skipfas
 
   # Alignment using bowtie2
   # Defaults: --no-sq -5 1 -N 1
-  file_list = run_aligner(trimmed_fq=trimmed_fq,fastq_dirs=fastq_dirs,aligner=aligner,reference_fasta=reference_fasta,genome_index=genome_index,num_cpu=num_cpu, is_single_end=is_single_end,pair_tags=pair_tags,aligner_args=aligner_args,convert_to_bam=convert_to_bam)
+  file_list = run_aligner(trimmed_fq=trimmed_fq,fastq_dirs=fastq_dirs,aligner=aligner,reference_fasta=reference_fasta,genome_index=genome_index, guide_library=guide_library,num_cpu=num_cpu, is_single_end=is_single_end,pair_tags=pair_tags,aligner_args=aligner_args,convert_to_bam=convert_to_bam)
 
   # Bam files processing to create input for MAGeCK
   # Run sam_parser_to_guide_counts.sh
@@ -340,8 +344,7 @@ if __name__ == '__main__':
   from argparse import ArgumentParser
 
   epilog = 'For further help on running this program please email paulafp@mrc-lmb.cam.ac.uk.\n\n'
-  epilog += 'Generic example use: python3 CAM.py samples.csv reference.fa \n\n'
-  epilog += 'Example use for bassik library: python3 CAM.py -aligner_args "-5 1" samples.csv reference.fa \n\n'
+  epilog += 'Generic example use: python3 CAM.py samples.csv reference.fa guides_library_sorted.csv\n\n'
 
   arg_parse = ArgumentParser(prog=PROG_NAME, description=DESCRIPTION,
                              epilog=epilog, prefix_chars='-', add_help=True)
@@ -377,7 +380,10 @@ if __name__ == '__main__':
   
   arg_parse.add_argument('-sam_output', default='convert_to_bam',
                          help='Specify what to do with the sam file. Options are: sam (keep sam file),convert_to_bam (convert sam file to bam format), delete (delete sam file - best option to save disk space). Default is set to convert_to_bam')
-
+  
+  arg_parse.add_argument('-guide_library',default='bassik',
+                         help='Specify which guide library was used. This parameter is optional. Default: bassik')
+  
   arg_parse.add_argument('-crispr_software',default = 'mageck',
                          help = 'Specify whether you want your guide counts in MAGeECK or Bagel compatible format. Default: MAGeCK.')
   
@@ -405,11 +411,12 @@ if __name__ == '__main__':
   genome_index     = args['aligner_index']
   aligner_args     = args['aligner_args']
   sam_output       = args['sam_output']
+  guide_library    = args['guide_library']
   software         = args['crispr_software']
   num_cpu          = args['cpu'] or None # May not be zero
   pair_tags        = args['pe']
   is_single_end    = args['se']
   multiqc          = not args['disable_multiqc']
   
-  CAM(samples_csv=samples_csv, guides_csv=guides_csv, reference_fasta=reference_fasta, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, is_single_end=is_single_end, pair_tags=pair_tags, aligner=aligner, genome_index=genome_index, aligner_args=aligner_args, sam_output=sam_output, software=software, multiqc=multiqc, num_cpu=num_cpu)
+  CAM(samples_csv=samples_csv, guides_csv=guides_csv, reference_fasta=reference_fasta, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, is_single_end=is_single_end, pair_tags=pair_tags, aligner=aligner, genome_index=genome_index, aligner_args=aligner_args, sam_output=sam_output, guide_library=guide_library, software=software, multiqc=multiqc, num_cpu=num_cpu)
 

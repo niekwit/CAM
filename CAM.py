@@ -125,10 +125,14 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
     if convert_to_bam is True:
       file_list = []
       for f, sam , log in sam_log_list:
+        wd = os.path.dirname(sam)
+        sam_header = os.path.basename(sam).split('.')[:-1]
+        sam_header = '.'.join(sam_header)
+        check_exists = wd + '/' + sam_header + '.bam'
         if pragui.exists_skip(check_exists):
           file = convert_sam_to_bam(sam=sam)
         else:
-          file = sam
+          file = check_exists
         file_list.append(file)
     
     return(file_list)

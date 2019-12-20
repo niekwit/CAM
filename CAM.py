@@ -87,8 +87,10 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
       file_list = []
       for f, sam , log in sam_log_list:
         if convert_to_bam:
-          dir = os.path.dirname(sam)
-          check_exists = dir + '/' + os.path.basename(f) + '.bam'
+          wd = os.path.dirname(sam)
+          sam_header = os.path.basename(sam).split('.')[:-1]
+          sam_header = '.'.join(sam_header)
+          check_exists = wd + '/' + sam_header + '.bam'
         else:
           check_exists = sam
         file_list.append(sam)
@@ -107,11 +109,14 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
       file_list = []
       for f, sam , log in sam_log_list:
         if convert_to_bam:
-          dir = os.path.dirname(sam)
-          check_exists = dir + '/' + os.path.basename(f) + '.bam'
+          wd = os.path.dirname(sam)
+          sam_header = os.path.basename(sam).split('.')[:-1]
+          sam_header = '.'.join(sam_header)
+          check_exists = wd + '/' + sam_header + '.bam'
         else:
           check_exists = sam
         file_list.append(sam)
+        print(check_exists)
         if pragui.exists_skip(check_exists):
           cmdArgs = [aligner] + aligner_args + ['-p',str(num_cpu),'-x', genome_index,'-U', f, '-S', sam]
           util.call(cmdArgs,stderr=log)
@@ -165,7 +170,7 @@ def sam_parser_parallel(file_list, convert_to_bam,aligner,num_cpu=util.MAX_CORES
 def tsv_format(counts_file_list,guides_csv,software=list('mageck' or 'bagel')[1]):
   
   print(counts_file_list)
-  wd = counts_file_list.split[0] ('/')[:-1]
+  wd = counts_file_list[0].split('/')[:-1]
   wd = "/".join(wd)
   counts_aggregated_file='%s/counts_aggregated_%s.tsv' % (wd,software)
   

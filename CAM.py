@@ -202,15 +202,24 @@ def tsv_format(counts_file_list,guides_csv,software=list('mageck' or 'bagel')[1]
       gene_output.append(s)
 
   #Generates reference Pandas data frame from sgRNA list library file
-  d0 = {'sgRNA':pd.Series(sgRNA_output),'gene':pd.Series(gene_output),'sgRNA2':pd.Series(sgrnas_list0)}
+  if software == 'mageck':
+    d0 = {'sgRNA':pd.Series(sgRNA_output),'gene':pd.Series(gene_output),'sgRNA2':pd.Series(sgrnas_list0)}
+  elif software == 'bagel':
+    d0 = {'SEQID':pd.Series(sgRNA_output),'GENE':pd.Series(gene_output),'sgRNA2':pd.Series(sgrnas_list0)}
+  else:
+    util.critical('CRISPR software tool must be either mageck or bagel.')
+  
   dfjoin1 = pd.DataFrame(d0) #sgRNA/gene column required for MAGeCK, sgRNA2 is needed for join operation (deleted later)
 
-  if software == 'mageck':
-    counts_file_list.sort()
-    counts_file_list2 = [w.replace('.txt','') for w in counts_file_list] #this list will generate the column headers for the output file (removes .txt)
-  else:
-    counts_file_list2 = counts_file_list
-
+#  if software == 'mageck':
+#    counts_file_list.sort()
+#    counts_file_list2 = [w.replace('.txt','') for w in counts_file_list] #this list will generate the column headers for the output file (removes .txt)
+#  else:
+#    counts_file_list2 = counts_file_list
+  counts_file_list.sort()
+  counts_file_list2 = [w.replace('.txt','') for w in counts_file_list]
+  counts_file_list2 = [w.split()['/'][-1] for w in counts_file_list]
+  
 
   #Counts number of .txt files in script folder
   txtnumber = len(counts_file_list)

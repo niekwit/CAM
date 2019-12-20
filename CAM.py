@@ -2,6 +2,9 @@
 
 import os
 import sys
+import glob
+import pandas as pd
+import csv
 
 current_path = os.path.realpath(__file__)
 cam_directory = os.path.dirname(current_path)
@@ -147,9 +150,122 @@ def sam_parser_parallel(file_list, convert_to_bam,aligner,num_cpu=util.MAX_CORES
   counts_file_list = util.parallel_split_job(sam_parser,file_list,common_args,num_cpu)
   return(counts_file_list)
 
+
+# Reformat data for compatibility with either MAGeCK or Bagel
+def tsv_format(counts_file_list,guides_csv,software=list('mageck' or 'bagel')[1]):
   
+  wd = counts_file_list.split('/')[:-1]
+  wd = "/".join(wd)
+  counts_aggregated_file='%s/counts_aggregated_%s.tsv' % (wd,software)
+  
+  util.info('Generating')
+  #Generates reference list of all library sgRNAs
+  #sgrnas_list00 = list(csv.reader(open("bassik-guides-sorted.csv"))) #Change file name to your library file
+  sgrnas_list00 = list(csv.reader(open(guides_csv))) #Change file name to your library file
+
+  sgrnas_list0 = []
+
+  for x in sgrnas_list00: #Flattens the list
+      for y in x:
+          sgrnas_list0.append(y)
+
+  #Generates sgRNA and gene columns for final output
+  sgRNA_output = []
+  gene_output = []
+
+  for n in sgrnas_list0:
+      s,g = n.split("_", 1)
+      sgRNA_output.append(g)
+      gene_output.append(s)
+
+  #Generates reference Pandas data frame from sgRNA list library file
+  d0 = {'sgRNA':pd.Series(sgRNA_output),'gene':pd.Series(gene_output),'sgRNA2':pd.Series(sgrnas_list0)}
+  dfjoin1 = pd.DataFrame(d0) #sgRNA/gene column required for MAGeCK, sgRNA2 is needed for join operation (deleted later)
+
+  if software == 'mageck':
+    counts_file_list.sort()
+    counts_file_list2 = [w.replace('.txt','') for w in counts_file_list] #this list will generate the column headers for the output file (removes .txt)
+  else:
+    counts_file_list2 = counts_file_list
+
+
+  #Counts number of .txt files in script folder
+  txtnumber = len(counts_file_list)
+
+  #Generates list of lists for join function output
+  cycle = 1
+  master_count_list0 = []
+  while cycle <= txtnumber:
+      master_count_list0.append("count_list"+ str(cycle))
+      cycle +=1
+  master_count_list1 = []
+  for i in master_count_list0:
+      master_count_list1.append([i])
+    
+  cycle = 1
+  master_sgrna_list0 = []
+  while cycle <= txtnumber:
+      master_sgrna_list0.append("sgrna_list"+ str(cycle))
+      cycle +=1
+  master_sgrna_list1 = []
+  for i in master_sgrna_list0:
+      master_sgrna_list1.append([i])
+  
+  if software == 'bagel':
+    cycle = 1
+    master_joined_count_list0 = []
+    while cycle <= txtnumber:
+        master_joined_count_list0.append("joined_count_list"+ str(cycle))
+        cycle +=1
+    master_joined_count_list1 = []
+    for i in master_joined_count_list0:
+        master_joined_count_list1.append([i])
+  
+  #Generates Pandas data frame and adds each of the count files in the folder to it after joining
+  counter = 0
+  while counter < txtnumber:
+      #Opens count files and extract counts and sgRNA names
+      file = list(csv.reader(open(counts_file_list [counter])))
+    
+      for x in file:
+          a = str(x)
+          if a.count(' ') > 1:
+              z,b,c = a.split()
+              bint = int(b)
+              cmod = c.replace("']","")
+              master_count_list1 [counter].append(bint)
+              master_sgrna_list1 [counter].append(cmod)
+          else:
+              b,c = a.split()
+              bint = b.replace("['","")
+              bint = int(bint)
+              cmod = c.replace("']","")
+              master_count_list1 [counter].append(bint)
+              master_sgrna_list1 [counter].append(cmod)
+    
+      #Generates Pandas data frame for the data
+      d1 = {'sgRNA2':pd.Series(master_sgrna_list1 [counter]),
+          counts_file_list2 [counter]:pd.Series(master_count_list1 [counter])}
+      df1 = pd.DataFrame(d1)
+
+      #Performs left join to merge Pandas data frames sets:
+      dfjoin1 = pd.merge(dfjoin1, df1, on='sgRNA2', how='left')
+      dfjoin1 = dfjoin1.fillna(0) #Replaces nan with zero
+       
+      counter +=1
+
+  #Deletes sgRNA2 column from dataframe (only needed for joining)
+  dfjoin2 = dfjoin1.drop(columns='sgRNA2')
+ 
+  #Writes all data to a single .tsv file, ready for either MAGeCK or Bagel
+  dfjoin2.to_csv(counts_aggregated_file, sep='\t',index=False)
+  
+  return(dfjoin2)
+
+
+######################## 
 # Wrapper function
-def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, fastqc_args=None, is_single_end=True, pair_tags=['r_1','r_2'], aligner='bowtie2', genome_index=None, aligner_args=None, sam_output='convert_to_bam', multiqc=True, num_cpu=util.MAX_CORES):
+def CAM(samples_csv, guides_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, fastqc_args=None, is_single_end=True, pair_tags=['r_1','r_2'], aligner='bowtie2', genome_index=None, aligner_args=None, sam_output='convert_to_bam',software=list('mageck' or 'bagel')[1], multiqc=True, num_cpu=util.MAX_CORES):
   
   convert_to_bam = False
   remove_sam = True
@@ -177,14 +293,15 @@ def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, f
   # Defaults: --no-sq -5 1 -N 1
   file_list = run_aligner(trimmed_fq=trimmed_fq,fastq_dirs=fastq_dirs,aligner=aligner,reference_fasta=reference_fasta,genome_index=genome_index,num_cpu=num_cpu, is_single_end=is_single_end,pair_tags=pair_tags,aligner_args=aligner_args,convert_to_bam=convert_to_bam)
 
-
   # Bam files processing to create input for MAGeCK
   # Run sam_parser_to_guide_counts.sh
   counts_file_list = sam_parser_parallel(file_list=file_list,aligner=aligner,num_cpu=num_cpu,convert_to_bam=convert_to_bam)
   
+  # Join all your individual Bowtie alignment files (.txt) into one file that is suitable for either MAGeCK or Bagel analysis
+  dfjoin2 = tsv_format(counts_file_list=counts_file_list,guides_csv=guides_csv,software=software)
+
   # Run Multiqc for quality control 
   pragui.run_multiqc(multiqc=multiqc)
-
 
 
 if __name__ == '__main__':
@@ -203,7 +320,10 @@ if __name__ == '__main__':
 
   arg_parse.add_argument('reference_fasta', metavar='REFERENCE_FASTA',
                          help='File path of guide RNAs\' reference sequence FASTA file (for use by genome aligner)')
-                         
+
+  arg_parse.add_argument('guides_csv', metavar='GUIDES_CSV',
+                         help='sorted library file that only contains gene/sgRNA info (i.e. A1BG_sgA1BG_1) in one column')
+                    
   arg_parse.add_argument('-trim_galore', # metavar='TRIM_GALORE_OPTIONS',
                          default=None,
                          help='options to be provided to trimgalore. They should be provided under double quotes. If not provided, trimgalore will run with developer\'s default options.')
@@ -227,6 +347,9 @@ if __name__ == '__main__':
   arg_parse.add_argument('-sam_output', default='convert_to_bam',
                          help='Specify what to do with the sam file. Options are: sam (keep sam file),convert_to_bam (convert sam file to bam format), delete (delete sam file - best option to save disk space). Default is set to convert_to_bam')
 
+  arg_parse.add_argument('-crispr_software',default = 'mageck',
+                         help = 'Specify whether you want your guide counts in MAGeECK or Bagel compatible format. Default: MAGeCK.)
+  
   arg_parse.add_argument('-cpu', metavar='NUM_CORES', default=util.MAX_CORES, type=int,
                          help='Number of parallel CPU cores to use. Default: All available (%d)' % util.MAX_CORES)
 
@@ -241,19 +364,20 @@ if __name__ == '__main__':
 
   args = vars(arg_parse.parse_args())
 
-  samples_csv   = args['samples_csv']
+  samples_csv      = args['samples_csv']
   reference_fasta  = args['reference_fasta']
-  trim_galore   = args['trim_galore']
-  skipfastqc    = args['skipfastqc']
-  fastqc_args   = args['fastqc_args']
-  aligner       = args['al']
+  trim_galore      = args['trim_galore']
+  skipfastqc       = args['skipfastqc']
+  fastqc_args      = args['fastqc_args']
+  aligner          = args['al']
   genome_index     = args['aligner_index']
-  aligner_args      = args['aligner_args']
-  sam_output    = args['sam_output']
-  num_cpu       = args['cpu'] or None # May not be zero
-  pair_tags     = args['pe']
-  is_single_end = args['se']
-  multiqc       = not args['disable_multiqc']
+  aligner_args     = args['aligner_args']
+  sam_output       = args['sam_output']
+  software         = args['crispr_software']
+  num_cpu          = args['cpu'] or None # May not be zero
+  pair_tags        = args['pe']
+  is_single_end    = args['se']
+  multiqc          = not args['disable_multiqc']
   
-  CAM(samples_csv=samples_csv, reference_fasta=reference_fasta, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, is_single_end=is_single_end, pair_tags=pair_tags, aligner=aligner, genome_index=genome_index, aligner_args=aligner_args, sam_output=sam_output, multiqc=multiqc, num_cpu=num_cpu)
+  CAM(samples_csv=samples_csv, guides_csv=guides_csv, reference_fasta=reference_fasta, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, is_single_end=is_single_end, pair_tags=pair_tags, aligner=aligner, genome_index=genome_index, aligner_args=aligner_args, sam_output=sam_output, software=software, multiqc=multiqc, num_cpu=num_cpu)
 

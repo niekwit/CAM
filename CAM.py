@@ -176,12 +176,11 @@ def sam_parser_parallel(file_list, convert_to_bam,aligner,num_cpu=util.MAX_CORES
 # Reformat data for compatibility with either MAGeCK or Bagel
 def tsv_format(counts_file_list,guides_csv,software=list('mageck' or 'bagel')[1]):
   
-  print(counts_file_list)
   wd = counts_file_list[0].split('/')[:-1]
   wd = "/".join(wd)
   counts_aggregated_file='%s/counts_aggregated_%s.tsv' % (wd,software)
   
-  util.info('Generating')
+  util.info('Generating guide counts file in %s format. Results saved in %s...' % (software,counts_aggregated_file))
   #Generates reference list of all library sgRNAs
   #sgrnas_list00 = list(csv.reader(open("bassik-guides-sorted.csv"))) #Change file name to your library file
   sgrnas_list00 = list(csv.reader(open(guides_csv))) #Change file name to your library file
@@ -218,7 +217,7 @@ def tsv_format(counts_file_list,guides_csv,software=list('mageck' or 'bagel')[1]
 #    counts_file_list2 = counts_file_list
   counts_file_list.sort()
   counts_file_list2 = [w.replace('.txt','') for w in counts_file_list]
-  counts_file_list2 = [w.split()['/'][-1] for w in counts_file_list]
+  counts_file_list2 = [w.split('/')[-1] for w in counts_file_list2]
   
 
   #Counts number of .txt files in script folder

@@ -154,7 +154,7 @@ def sam_parser_parallel(file_list, convert_to_bam,aligner,num_cpu=util.MAX_CORES
 # Reformat data for compatibility with either MAGeCK or Bagel
 def tsv_format(counts_file_list,guides_csv,software=list('mageck' or 'bagel')[1]):
   
-  wd = counts_file_list.split('/')[:-1]
+  wd = counts_file_list.split[0] ('/')[:-1]
   wd = "/".join(wd)
   counts_aggregated_file='%s/counts_aggregated_%s.tsv' % (wd,software)
   
@@ -348,7 +348,7 @@ if __name__ == '__main__':
                          help='Specify what to do with the sam file. Options are: sam (keep sam file),convert_to_bam (convert sam file to bam format), delete (delete sam file - best option to save disk space). Default is set to convert_to_bam')
 
   arg_parse.add_argument('-crispr_software',default = 'mageck',
-                         help = 'Specify whether you want your guide counts in MAGeECK or Bagel compatible format. Default: MAGeCK.)
+                         help = 'Specify whether you want your guide counts in MAGeECK or Bagel compatible format. Default: MAGeCK.')
   
   arg_parse.add_argument('-cpu', metavar='NUM_CORES', default=util.MAX_CORES, type=int,
                          help='Number of parallel CPU cores to use. Default: All available (%d)' % util.MAX_CORES)
@@ -366,6 +366,7 @@ if __name__ == '__main__':
 
   samples_csv      = args['samples_csv']
   reference_fasta  = args['reference_fasta']
+  guides_csv       = args['guides_csv']
   trim_galore      = args['trim_galore']
   skipfastqc       = args['skipfastqc']
   fastqc_args      = args['fastqc_args']

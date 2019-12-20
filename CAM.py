@@ -86,8 +86,13 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
       sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end,convert_to_bam=convert_to_bam)
       file_list = []
       for f, sam , log in sam_log_list:
+        if convert_to_bam:
+          dir = os.path.dirname(sam)
+          check_exists = dir + '/' + os.path.basename(f) + '.bam'
+        else:
+          check_exists = sam
         file_list.append(sam)
-        if pragui.exists_skip(sam):
+        if pragui.exists_skip(check_exists):
           cmdArgs = [aligner] + aligner_args + ['-p',str(num_cpu), genome_index,f] + sam_args + [sam]
           util.call(cmdArgs,stderr=log)
           
@@ -101,8 +106,13 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',reference_fasta=None,gen
       sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end,convert_to_bam=convert_to_bam)
       file_list = []
       for f, sam , log in sam_log_list:
+        if convert_to_bam:
+          dir = os.path.dirname(sam)
+          check_exists = dir + '/' + os.path.basename(f) + '.bam'
+        else:
+          check_exists = sam
         file_list.append(sam)
-        if pragui.exists_skip(sam):
+        if pragui.exists_skip(check_exists):
           cmdArgs = [aligner] + aligner_args + ['-p',str(num_cpu),'-x', genome_index,'-U', f, '-S', sam]
           util.call(cmdArgs,stderr=log)
             
@@ -154,6 +164,7 @@ def sam_parser_parallel(file_list, convert_to_bam,aligner,num_cpu=util.MAX_CORES
 # Reformat data for compatibility with either MAGeCK or Bagel
 def tsv_format(counts_file_list,guides_csv,software=list('mageck' or 'bagel')[1]):
   
+  print(counts_file_list)
   wd = counts_file_list.split[0] ('/')[:-1]
   wd = "/".join(wd)
   counts_aggregated_file='%s/counts_aggregated_%s.tsv' % (wd,software)

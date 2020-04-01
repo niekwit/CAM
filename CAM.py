@@ -178,29 +178,25 @@ def sam_parser_parallel(file_list, convert_to_bam,aligner,num_cpu=util.MAX_CORES
 
 
 # Reformat data for compatibility with either MAGeCK or Bagel
-def tsv_format(counts_file_list,guides_csv,software=list('mageck' or 'bagel')[1]):
+def tsv_format(counts_file_list,reference_fasta,software=list('mageck' or 'bagel')[1]):
   
   wd = counts_file_list[0].split('/')[:-1]
   wd = "/".join(wd)
   counts_aggregated_file='%s/counts_aggregated_%s.tsv' % (wd,software)
   
   util.info('Generating guide counts file in %s format. Results saved in %s...' % (software,counts_aggregated_file))
-  #Generates reference list of all library sgRNAs
-  #sgrnas_list00 = list(csv.reader(open("bassik-guides-sorted.csv"))) #Change file name to your library file
-  sgrnas_list00 = list(csv.reader(open(guides_csv))) #Change file name to your library file
-
+  
+  #  Generates reference list of all library sgRNAs
+  fasta_obj = open(reference_fasta,'r')
   sgrnas_list0 = []
-
-  for x in sgrnas_list00: #Flattens the list
-      for y in x:
-          sgrnas_list0.append(y)
-
-  #Generates sgRNA and gene columns for final output
   sgRNA_output = []
   gene_output = []
-
-  for n in sgrnas_list0:
-      s,g = n.split("_", 1)
+  for line in fasta_obj:
+    if '>' in line:
+      line = line.rstrip('\n')
+      line = line.lstrip('>')
+      s,g = line.split("_", 1)
+      sgrnas_list0.append(line)
       sgRNA_output.append(g)
       gene_output.append(s)
 
@@ -214,11 +210,7 @@ def tsv_format(counts_file_list,guides_csv,software=list('mageck' or 'bagel')[1]
   
   dfjoin1 = pd.DataFrame(d0) #sgRNA/gene column required for MAGeCK, sgRNA2 is needed for join operation (deleted later)
 
-#  if software == 'mageck':
-#    counts_file_list.sort()
-#    counts_file_list2 = [w.replace('.txt','') for w in counts_file_list] #this list will generate the column headers for the output file (removes .txt)
-#  else:
-#    counts_file_list2 = counts_file_list
+
   counts_file_list.sort()
   counts_file_list2 = [w.replace('.txt','') for w in counts_file_list]
   counts_file_list2 = [w.split('/')[-1] for w in counts_file_list2]
@@ -300,7 +292,8 @@ def tsv_format(counts_file_list,guides_csv,software=list('mageck' or 'bagel')[1]
 
 ######################## 
 # Wrapper function
-def CAM(samples_csv, guides_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, fastqc_args=None, is_single_end=True, pair_tags=['r_1','r_2'], aligner='bowtie2', genome_index=None, aligner_args=None, sam_output='convert_to_bam', guide_library='bassik',software=list('mageck' or 'bagel')[1], multiqc=True, num_cpu=util.MAX_CORES):
+def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, fastqc_args=None, is_single_end=True, pair_tags=['r_1','r_2'], aligner='bowtie2', genome_index=None, aligner_args=None, sam_output='convert_to_bam', guide_library='bassik',software=list('mageck' or 'bagel')[1], multiqc=True, num_cpu=util.MAX_CORES):
+
   
   convert_to_bam = False
   remove_sam = True
@@ -333,7 +326,7 @@ def CAM(samples_csv, guides_csv, reference_fasta=None, trim_galore=None, skipfas
   counts_file_list = sam_parser_parallel(file_list=file_list,aligner=aligner,num_cpu=num_cpu,convert_to_bam=convert_to_bam)
   
   # Join all your individual Bowtie alignment files (.txt) into one file that is suitable for either MAGeCK or Bagel analysis
-  dfjoin2 = tsv_format(counts_file_list=counts_file_list,guides_csv=guides_csv,software=software)
+  dfjoin2 = tsv_format(counts_file_list=counts_file_list,reference_fasta=reference_fasta,software=software)
 
   # Run Multiqc for quality control 
   pragui.run_multiqc(multiqc=multiqc)
@@ -344,7 +337,7 @@ if __name__ == '__main__':
   from argparse import ArgumentParser
 
   epilog = 'For further help on running this program please email paulafp@mrc-lmb.cam.ac.uk.\n\n'
-  epilog += 'Generic example use: python3 CAM.py samples.csv reference.fa guides_library_sorted.csv\n\n'
+  epilog += 'Generic example use: python3 CAM.py samples.csv reference.fa \n\n'
 
   arg_parse = ArgumentParser(prog=PROG_NAME, description=DESCRIPTION,
                              epilog=epilog, prefix_chars='-', add_help=True)
@@ -354,11 +347,8 @@ if __name__ == '__main__':
 
   arg_parse.add_argument('reference_fasta', metavar='REFERENCE_FASTA',
                          help='File path of guide RNAs\' reference sequence FASTA file (for use by genome aligner)')
-
-  arg_parse.add_argument('guides_csv', metavar='GUIDES_CSV',
-                         help='sorted library file that only contains gene/sgRNA info (i.e. A1BG_sgA1BG_1) in one column')
                     
-  arg_parse.add_argument('-trim_galore', # metavar='TRIM_GALORE_OPTIONS',
+  arg_parse.add_argument('-trim_galore',
                          default=None,
                          help='options to be provided to trimgalore. They should be provided under double quotes. If not provided, trimgalore will run with developer\'s default options.')
 
@@ -403,7 +393,6 @@ if __name__ == '__main__':
 
   samples_csv      = args['samples_csv']
   reference_fasta  = args['reference_fasta']
-  guides_csv       = args['guides_csv']
   trim_galore      = args['trim_galore']
   skipfastqc       = args['skipfastqc']
   fastqc_args      = args['fastqc_args']
@@ -418,5 +407,5 @@ if __name__ == '__main__':
   is_single_end    = args['se']
   multiqc          = not args['disable_multiqc']
   
-  CAM(samples_csv=samples_csv, guides_csv=guides_csv, reference_fasta=reference_fasta, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, is_single_end=is_single_end, pair_tags=pair_tags, aligner=aligner, genome_index=genome_index, aligner_args=aligner_args, sam_output=sam_output, guide_library=guide_library, software=software, multiqc=multiqc, num_cpu=num_cpu)
-
+  CAM(samples_csv=samples_csv, reference_fasta=reference_fasta, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, is_single_end=is_single_end, pair_tags=pair_tags, aligner=aligner, genome_index=genome_index, aligner_args=aligner_args, sam_output=sam_output, guide_library=guide_library, software=software, multiqc=multiqc, num_cpu=num_cpu)
+  

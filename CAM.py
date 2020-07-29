@@ -20,7 +20,10 @@ import cell_bio_util as util
 
 
 PROG_NAME = 'CAM'
-DESCRIPTION = 'CRISPR Analysis Module'
+DESCRIPTION = '''CRISPR Analysis Module - Software to process fastq files from a 
+                 genome-wide CRISPR screen. It does read trimming, alignment, counting
+                 and parsing into a format compatible with either MAGeCK or Bagel (two
+                 common softwares for statistical analysis).'''
 
 
 # Function to convert sam to bam using samtools:
@@ -97,6 +100,9 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',guide_library='bassik',r
           check_exists = sam
         file_list.append(sam)
         if pragui.exists_skip(check_exists):
+        # Function pragui.exists_skip() determines if next step should go ahead.
+        # It skips the next step if the file path provided exists.
+        # This prevents overwriting files and also saves processing time.
           cmdArgs = [aligner] + aligner_args + ['-p',str(num_cpu), genome_index,f] + sam_args + [sam]
           util.call(cmdArgs,stderr=log)
           
@@ -106,7 +112,8 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',guide_library='bassik',r
       else:
         header_opt = ['--no-hd']
       if aligner_args is None:
-        aligner_args = ['-N','0','--no-1mm-upfront','--score-min', 'L,0,0', '--no-unal'] + header_opt # allow no mismatches and no pre-alignment before multiseed heuristic
+        # Allow no mismatches and no pre-alignment before multiseed heuristic
+        aligner_args = ['-N','0','--no-1mm-upfront','--score-min', 'L,0,0', '--no-unal'] + header_opt
         if guide_library == 'bassik':
           aligner_args = aligner_args + ['-5','1']
       sam_log_list = format_aligner_input(trimmed_fq=trimmed_fq,aligner=aligner,aligner_args=aligner_args,is_single_end=is_single_end,convert_to_bam=convert_to_bam)
@@ -120,7 +127,6 @@ def run_aligner(trimmed_fq,fastq_dirs,aligner='bowtie2',guide_library='bassik',r
         else:
           check_exists = sam
         file_list.append(sam)
-        print(check_exists)
         if pragui.exists_skip(check_exists):
           cmdArgs = [aligner] + aligner_args + ['-p',str(num_cpu),'-x', genome_index,'-U', f, '-S', sam]
           util.call(cmdArgs,stderr=log)
@@ -158,7 +164,9 @@ def sam_parser_parallel(file_list, convert_to_bam,aligner,num_cpu=util.MAX_CORES
       util.info('Removing sam header from %s in order to proceed to read counting...' % sam_file)
       # Remove header
       temp = sam_file.strip(ext) + '_temp.sam'
-      cmdArgs = ['samtools','view','-F','4',sam_file,'-o',temp] # Remove unaligned reads if there are any. This is particularly important when using bowtie because the --no-unal flag doesn't really work.
+      # Remove unaligned reads if there are any. 
+      # This is particularly important when using bowtie because the --no-unal flag doesn't really work.
+      cmdArgs = ['samtools','view','-F','4',sam_file,'-o',temp] 
       util.call(cmdArgs)
       util.info('Counting reads from %s...' % sam_file)
       cmdArgs = [sam_parser_to_guide_counts,temp,counts_file,aligner]
@@ -186,7 +194,7 @@ def tsv_format(counts_file_list,reference_fasta,software=list('mageck' or 'bagel
   
   util.info('Generating guide counts file in %s format. Results saved in %s...' % (software,counts_aggregated_file))
   
-  #  Generates reference list of all library sgRNAs
+  # Generates reference list of all library sgRNAs
   fasta_obj = open(reference_fasta,'r')
   sgrnas_list0 = []
   sgRNA_output = []
@@ -200,7 +208,7 @@ def tsv_format(counts_file_list,reference_fasta,software=list('mageck' or 'bagel
       sgRNA_output.append(g)
       gene_output.append(s)
 
-  #Generates reference Pandas data frame from sgRNA list library file
+  # Generates reference Pandas data frame from sgRNA list library file
   if software == 'mageck':
     d0 = {'sgRNA':pd.Series(sgRNA_output),'gene':pd.Series(gene_output),'sgRNA2':pd.Series(sgrnas_list0)}
   elif software == 'bagel':
@@ -216,10 +224,10 @@ def tsv_format(counts_file_list,reference_fasta,software=list('mageck' or 'bagel
   counts_file_list2 = [w.split('/')[-1] for w in counts_file_list2]
   
 
-  #Counts number of .txt files in script folder
+  # Counts number of .txt files in script folder
   txtnumber = len(counts_file_list)
 
-  #Generates list of lists for join function output
+  # Generates list of lists for join function output
   cycle = 1
   master_count_list0 = []
   while cycle <= txtnumber:
@@ -248,10 +256,10 @@ def tsv_format(counts_file_list,reference_fasta,software=list('mageck' or 'bagel
     for i in master_joined_count_list0:
         master_joined_count_list1.append([i])
   
-  #Generates Pandas data frame and adds each of the count files in the folder to it after joining
+  # Generates Pandas data frame and adds each of the count files in the folder to it after joining
   counter = 0
   while counter < txtnumber:
-      #Opens count files and extract counts and sgRNA names
+      # Opens count files and extract counts and sgRNA names
       file = list(csv.reader(open(counts_file_list [counter])))
     
       for x in file:
@@ -270,21 +278,21 @@ def tsv_format(counts_file_list,reference_fasta,software=list('mageck' or 'bagel
               master_count_list1 [counter].append(bint)
               master_sgrna_list1 [counter].append(cmod)
     
-      #Generates Pandas data frame for the data
+      # Generates Pandas data frame for the data
       d1 = {'sgRNA2':pd.Series(master_sgrna_list1 [counter]),
           counts_file_list2 [counter]:pd.Series(master_count_list1 [counter])}
       df1 = pd.DataFrame(d1)
 
-      #Performs left join to merge Pandas data frames sets:
+      # Performs left join to merge Pandas data frames sets:
       dfjoin1 = pd.merge(dfjoin1, df1, on='sgRNA2', how='left')
       dfjoin1 = dfjoin1.fillna(0) #Replaces nan with zero
        
       counter +=1
 
-  #Deletes sgRNA2 column from dataframe (only needed for joining)
+  # Deletes sgRNA2 column from dataframe (only needed for joining)
   dfjoin2 = dfjoin1.drop(columns='sgRNA2')
  
-  #Writes all data to a single .tsv file, ready for either MAGeCK or Bagel
+  # Writes all data to a single .tsv file, ready for either MAGeCK or Bagel
   dfjoin2.to_csv(counts_aggregated_file, sep='\t',index=False)
   
   return(dfjoin2)
@@ -310,6 +318,9 @@ def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, f
   
   header, csv = pragui.parse_csv(samples_csv)
   
+  if isinstance(aligner_args,str):
+    aligner_args = aligner_args.split(' ')
+  
   # Fastq file trimming using trimgalore
   # Defaults: --length 12 -e 0.2 -a GTTTAAGAGCTA ( only first 12 bp of adapter GTTTAAGAGCTAAGCTGGAAACAGCATAGCAA)
   if trim_galore is None:
@@ -317,15 +328,14 @@ def CAM(samples_csv, reference_fasta=None, trim_galore=None, skipfastqc=False, f
   trimmed_fq, fastq_dirs = pragui.trim_bam(samples_csv=samples_csv, csv=csv, trim_galore=trim_galore, skipfastqc=skipfastqc, fastqc_args=fastqc_args, 
                                     is_single_end=is_single_end, pair_tags=pair_tags)
 
-  # Alignment using bowtie2
-  # Defaults: --no-sq -5 1 -N 1
+  # Alignment
   file_list = run_aligner(trimmed_fq=trimmed_fq,fastq_dirs=fastq_dirs,aligner=aligner,reference_fasta=reference_fasta,genome_index=genome_index, guide_library=guide_library,num_cpu=num_cpu, is_single_end=is_single_end,pair_tags=pair_tags,aligner_args=aligner_args,convert_to_bam=convert_to_bam)
 
   # Bam files processing to create input for MAGeCK
   # Run sam_parser_to_guide_counts.sh
   counts_file_list = sam_parser_parallel(file_list=file_list,aligner=aligner,num_cpu=num_cpu,convert_to_bam=convert_to_bam)
   
-  # Join all your individual Bowtie alignment files (.txt) into one file that is suitable for either MAGeCK or Bagel analysis
+  # Join all your individual alignment files (.txt) into one file that is suitable for either MAGeCK or Bagel analysis
   dfjoin2 = tsv_format(counts_file_list=counts_file_list,reference_fasta=reference_fasta,software=software)
 
   # Run Multiqc for quality control 
@@ -343,18 +353,29 @@ if __name__ == '__main__':
                              epilog=epilog, prefix_chars='-', add_help=True)
 
   arg_parse.add_argument('samples_csv', metavar='SAMPLES_CSV',
-                         help='File path of a tab-separated file containing the samples names, the file path for read1, the file path for read2, the experimental condition (e.g. Mutant or Wild-type) and any other information to be used as contrasts for differential expression calling. For single-ended experiments, please fill read2 slot with NA.')
+                         help='''File path of a tab-separated file containing the samples names,
+                                 the file path for read1, the file path for read2, 
+                                 the experimental condition (e.g. Mutant or Wild-type) and 
+                                 any other information to be used as contrasts for differential expression calling. 
+                                 For single-ended experiments, please fill read2 slot with NA.''')
 
   arg_parse.add_argument('reference_fasta', metavar='REFERENCE_FASTA',
                          help='File path of guide RNAs\' reference sequence FASTA file (for use by genome aligner)')
                     
   arg_parse.add_argument('-trim_galore',
                          default=None,
-                         help='options to be provided to trimgalore. They should be provided under double quotes. If not provided, trimgalore will run with developer\'s default options.')
+                         help='''Options to be provided to trimgalore. 
+                                 They should be provided under double quotes. 
+                                 If not provided, trimgalore will run with the following options:
+                                 "--length 11 -e 0.2 -a GTTTAAGAGCTA --clip_R1 1"
+                                 Please ensure these are suitable.
+                                 ''')
 
   arg_parse.add_argument('-fastqc_args', metavar='FASTQC',
                          default=None,
-                         help='options to be provided to fastqc. They should be provided under double quotes. If not provided, fastqc will run with developer\'s default options.')
+                         help='''Options to be provided to fastqc. 
+                                 They should be provided under double quotes. 
+                                 If not provided, fastqc will run with developer's default options.''')
 
   arg_parse.add_argument('-skipfastqc', default=False, action='store_true',
                          help='Option to skip fastqc step. If this option is set, the option -fastqc_args will be ignored.')
@@ -363,19 +384,30 @@ if __name__ == '__main__':
                          help='Name of the program to perform the genome alignment/mapping: Default: bowtie2')
                       
   arg_parse.add_argument('-aligner_index', metavar='BOWTIE_REFERENCE_SEQUENCE_INDEX', default=None,
-                         help='Path to directory where bowtie2 indices are stored.')
+                         help='Path to directory where indices are stored (for either bowtie or bowtie2).')
 
   arg_parse.add_argument('-aligner_args', default=None,
-                         help='Options to be provided to bowtie2. They should be provided under double quotes. If not provided, bowtie2 will be using the following options: -N 1')
+                         help='''Options to be provided to the aligner. 
+                                 They should be provided under double quotes. 
+                                 If not provided, aligner will be using the following options: 
+                                 [bowtie] "-v 0 -m 1 --strata --best"
+                                 [bowtie2] "-N 0 --no-1mm-upfront --score-min L,0,0 --no-unal"
+                                 Please ensure these are suitable.
+                                 ''')
   
   arg_parse.add_argument('-sam_output', default='convert_to_bam',
-                         help='Specify what to do with the sam file. Options are: sam (keep sam file),convert_to_bam (convert sam file to bam format), delete (delete sam file - best option to save disk space). Default is set to convert_to_bam')
+                         help='''Specify what to do with the sam file. 
+                                 Options are: 
+                                 sam (keep sam file), 
+                                 convert_to_bam (convert sam file to bam format), 
+                                 delete (delete sam file - best option to save disk space). 
+                                 Default is set to convert_to_bam.''')
   
   arg_parse.add_argument('-guide_library',default='bassik',
                          help='Specify which guide library was used. This parameter is optional. Default: bassik')
   
   arg_parse.add_argument('-crispr_software',default = 'mageck',
-                         help = 'Specify whether you want your guide counts in MAGeECK or Bagel compatible format. Default: MAGeCK.')
+                         help = 'Specify whether you want your guide counts in MAGeCK or Bagel compatible format. Default: MAGeCK.')
   
   arg_parse.add_argument('-cpu', metavar='NUM_CORES', default=util.MAX_CORES, type=int,
                          help='Number of parallel CPU cores to use. Default: All available (%d)' % util.MAX_CORES)
